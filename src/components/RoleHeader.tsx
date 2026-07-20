@@ -7,7 +7,7 @@ interface RoleHeaderProps {
 }
 
 export const RoleHeader: React.FC<RoleHeaderProps> = ({ onToggleSidebar }) => {
-  const { userRole, switchRole, darkMode, toggleDarkMode, notifications, clearNotification } = useApp();
+  const { userRole, switchRole, darkMode, toggleDarkMode, notifications, clearNotification, user, logout, settings } = useApp();
   const [showRoles, setShowRoles] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
 
@@ -37,14 +37,14 @@ export const RoleHeader: React.FC<RoleHeaderProps> = ({ onToggleSidebar }) => {
           <Menu className="w-5 h-5" />
         </button>
 
-        <div className="flex items-center justify-center w-10 h-10 rounded-xl bg-gradient-to-tr from-indigo-500 to-violet-600 text-white font-bold shadow-md shadow-indigo-500/20">
-          <span>HV</span>
+        <div className="flex items-center justify-center w-10 h-10 rounded-xl bg-gradient-to-tr from-indigo-500 to-violet-600 text-white font-bold shadow-md shadow-indigo-500/20 flex-shrink-0">
+          <span>{settings.name ? settings.name.substring(0, 2).toUpperCase() : 'HV'}</span>
         </div>
-        <div>
-          <h1 className="text-lg font-bold bg-gradient-to-r from-slate-900 to-slate-700 dark:from-white dark:to-slate-300 bg-clip-text text-transparent">
-            HotelVista ERP
+        <div className="max-w-[200px] md:max-w-xs">
+          <h1 className="text-sm md:text-base font-bold bg-gradient-to-r from-slate-900 to-slate-700 dark:from-white dark:to-slate-300 bg-clip-text text-transparent truncate" title={settings.name}>
+            {settings.name}
           </h1>
-          <p className="text-xs text-indigo-500 dark:text-indigo-400 font-semibold flex items-center gap-1">
+          <p className="text-[10px] text-indigo-500 dark:text-indigo-400 font-semibold flex items-center gap-1">
             <span>●</span> Active Role: {currentRoleInfo?.label}
           </p>
         </div>
@@ -182,18 +182,27 @@ export const RoleHeader: React.FC<RoleHeaderProps> = ({ onToggleSidebar }) => {
         </div>
 
         {/* STAFF SIGNATURE PROFILE */}
-        <div className="flex items-center gap-2 pl-2 border-l border-slate-200/50 dark:border-slate-800/50">
-          <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-slate-100 to-slate-200 dark:from-slate-800 dark:to-slate-700 flex items-center justify-center font-bold text-slate-700 dark:text-slate-300 text-sm">
-            {userRole.charAt(0).toUpperCase()}
+        <div className="flex items-center gap-3 pl-2 border-l border-slate-200/50 dark:border-slate-800/50">
+          <div className="flex items-center gap-2">
+            <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-slate-100 to-slate-200 dark:from-slate-800 dark:to-slate-700 flex items-center justify-center font-bold text-slate-700 dark:text-slate-300 text-sm">
+              {userRole.charAt(0).toUpperCase()}
+            </div>
+            <div className="hidden md:block max-w-[100px]">
+              <p className="text-xs font-semibold text-slate-700 dark:text-slate-200 truncate" title={user?.email || 'Staff'}>
+                {user?.email ? user.email.split('@')[0] : 'Staff'}
+              </p>
+              <p className="text-[9px] text-slate-400 leading-none truncate">
+                {currentRoleInfo?.label}
+              </p>
+            </div>
           </div>
-          <div className="hidden md:block">
-            <p className="text-xs font-semibold text-slate-700 dark:text-slate-200">
-              {userRole === 'admin' ? 'Hotel Admin' : 'Staff On-Duty'}
-            </p>
-            <p className="text-[9px] text-slate-400 leading-none">
-              {currentRoleInfo?.label}
-            </p>
-          </div>
+          <button
+            onClick={() => logout()}
+            className="px-2.5 py-1.5 text-[10px] font-bold text-rose-600 bg-rose-50 hover:bg-rose-100 dark:text-rose-400 dark:bg-rose-950/20 dark:hover:bg-rose-900/20 rounded-lg transition-all"
+            title="Sign out of tenant"
+          >
+            Logout
+          </button>
         </div>
 
       </div>

@@ -1,4 +1,15 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
+import { onAuthStateChanged, signOut, User } from 'firebase/auth';
+import { 
+  collection, 
+  doc, 
+  setDoc, 
+  updateDoc, 
+  deleteDoc, 
+  onSnapshot, 
+  writeBatch 
+} from 'firebase/firestore';
+import { auth, db, isFirebaseConfigured } from '../firebase';
 
 // ==========================================
 // TYPES DEFINITIONS
@@ -212,140 +223,70 @@ interface AppContextType {
   auditLogs: AuditLog[];
   notifications: AppNotification[];
   settings: HotelSettings;
+
+  // Firebase Auth Integrations
+  user: User | null;
+  loadingAuth: boolean;
+  tenantId: string | null;
+  logout: () => Promise<void>;
   
   // State mutations
-  checkInRoom: (roomId: string, guestInfo: { name: string; phone: string; email?: string; address?: string; idProof: string; gstNumber?: string; noOfGuests: number; advancePaid: number }) => void;
-  checkOutRoom: (roomId: string, paymentDetails: { method: 'Cash' | 'Card' | 'UPI' | 'Split'; discount: number; splitDetails?: string }) => void;
-  transferRoom: (fromRoomId: string, toRoomId: string) => void;
-  updateHousekeeping: (roomId: string, status: RoomStatus) => void;
-  extendStay: (roomId: string, days: number) => void;
+  checkInRoom: (roomId: string, guestInfo: { name: string; phone: string; email?: string; address?: string; idProof: string; gstNumber?: string; noOfGuests: number; advancePaid: number }) => Promise<void>;
+  checkOutRoom: (roomId: string, paymentDetails: { method: 'Cash' | 'Card' | 'UPI' | 'Split'; discount: number; splitDetails?: string }) => Promise<void>;
+  transferRoom: (fromRoomId: string, toRoomId: string) => Promise<void>;
+  updateHousekeeping: (roomId: string, status: RoomStatus) => Promise<void>;
+  extendStay: (roomId: string, days: number) => Promise<void>;
   
-  addPreBooking: (booking: Omit<PreBooking, 'id' | 'status' | 'bookingDate'>) => void;
-  cancelPreBooking: (id: string) => void;
-  confirmPreBookingCheckIn: (id: string, roomId: string) => void;
+  addPreBooking: (booking: Omit<PreBooking, 'id' | 'status' | 'bookingDate'>) => Promise<void>;
+  cancelPreBooking: (id: string) => Promise<void>;
+  confirmPreBookingCheckIn: (id: string, roomId: string) => Promise<void>;
   
-  addRestaurantBarOrder: (order: Omit<Order, 'id' | 'orderNumber' | 'timestamp' | 'tax' | 'total' | 'status'>) => void;
-  addLaundryOrder: (order: Omit<LaundryOrder, 'id' | 'orderNumber' | 'timestamp' | 'status'>) => void;
-  updateLaundryStatus: (id: string, status: 'Pending' | 'Delivered' | 'Completed') => void;
+  addRestaurantBarOrder: (order: Omit<Order, 'id' | 'orderNumber' | 'timestamp' | 'tax' | 'total' | 'status'>) => Promise<void>;
+  addLaundryOrder: (order: Omit<LaundryOrder, 'id' | 'orderNumber' | 'timestamp' | 'status'>) => Promise<void>;
+  updateLaundryStatus: (id: string, status: 'Pending' | 'Delivered' | 'Completed') => Promise<void>;
   
-  addHallBooking: (booking: Omit<HallBooking, 'id' | 'bookingNumber' | 'status' | 'totalPrice'>) => void;
-  cancelHallBooking: (id: string) => void;
+  addHallBooking: (booking: Omit<HallBooking, 'id' | 'bookingNumber' | 'status' | 'totalPrice'>) => Promise<void>;
+  cancelHallBooking: (id: string) => Promise<void>;
   
-  addInventoryItem: (item: Omit<InventoryItem, 'id'>) => void;
-  recordPurchase: (purchase: Omit<PurchaseLog, 'id' | 'date'>) => void;
-  updateStockLevel: (itemId: string, amount: number, direction: 'in' | 'out') => void;
+  addInventoryItem: (item: Omit<InventoryItem, 'id'>) => Promise<void>;
+  recordPurchase: (purchase: Omit<PurchaseLog, 'id' | 'date'>) => Promise<void>;
+  updateStockLevel: (itemId: string, amount: number, direction: 'in' | 'out') => Promise<void>;
   
   getBillSummary: (roomNumber: string) => BillSummary | null;
-  addAudit: (action: string, details: string, oldValue?: string, newValue?: string) => void;
-  clearNotification: (id: string) => void;
+  addAudit: (action: string, details: string, oldValue?: string, newValue?: string) => Promise<void>;
+  clearNotification: (id: string) => Promise<void>;
+
+  addMenuItem: (item: MenuItem) => Promise<void>;
+  updateSettings: (settings: HotelSettings) => Promise<void>;
+  addRoom: (room: Omit<Room, 'status' | 'restaurantCharges' | 'barCharges' | 'laundryCharges' | 'hallCharges' | 'otherCharges'>) => Promise<void>;
+  deleteRoom: (roomId: string) => Promise<void>;
+  resetTenantData: () => Promise<void>;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
 // ==========================================
-// PRE-POPULATED INITIAL DATA
+// PRE-POPULATED INITIAL DATA FOR SEEDING
 // ==========================================
 
 const defaultRooms: Room[] = [
-  // 1st Floor - Standard Rooms (101 - 106)
-  { id: 'r101', roomNumber: '101', category: 'Standard', floor: 1, price: 1500, status: 'Occupied', guestName: 'Rajesh Kumar', guestPhone: '9876543210', checkInDate: '2026-07-04', checkOutDate: '2026-07-07', noOfGuests: 2, advancePaid: 1000, restaurantCharges: 450, barCharges: 800, laundryCharges: 120, hallCharges: 0, otherCharges: 0 },
-  { id: 'r102', roomNumber: '102', category: 'Standard', floor: 1, price: 1500, status: 'Reserved', guestName: 'Sarah Smith', guestPhone: '9844332211', checkInDate: '2026-07-07', checkOutDate: '2026-07-10', noOfGuests: 1, advancePaid: 500, restaurantCharges: 0, barCharges: 0, laundryCharges: 0, hallCharges: 0, otherCharges: 0 },
+  { id: 'r101', roomNumber: '101', category: 'Standard', floor: 1, price: 1500, status: 'Available', restaurantCharges: 0, barCharges: 0, laundryCharges: 0, hallCharges: 0, otherCharges: 0 },
+  { id: 'r102', roomNumber: '102', category: 'Standard', floor: 1, price: 1500, status: 'Available', restaurantCharges: 0, barCharges: 0, laundryCharges: 0, hallCharges: 0, otherCharges: 0 },
   { id: 'r103', roomNumber: '103', category: 'Standard', floor: 1, price: 1500, status: 'Available', restaurantCharges: 0, barCharges: 0, laundryCharges: 0, hallCharges: 0, otherCharges: 0 },
-  { id: 'r104', roomNumber: '104', category: 'Standard', floor: 1, price: 1500, status: 'Cleaning', restaurantCharges: 0, barCharges: 0, laundryCharges: 0, hallCharges: 0, otherCharges: 0 },
-  { id: 'r105', roomNumber: '105', category: 'Standard', floor: 1, price: 1500, status: 'Maintenance', restaurantCharges: 0, barCharges: 0, laundryCharges: 0, hallCharges: 0, otherCharges: 0 },
+  { id: 'r104', roomNumber: '104', category: 'Standard', floor: 1, price: 1500, status: 'Available', restaurantCharges: 0, barCharges: 0, laundryCharges: 0, hallCharges: 0, otherCharges: 0 },
+  { id: 'r105', roomNumber: '105', category: 'Standard', floor: 1, price: 1500, status: 'Available', restaurantCharges: 0, barCharges: 0, laundryCharges: 0, hallCharges: 0, otherCharges: 0 },
   { id: 'r106', roomNumber: '106', category: 'Standard', floor: 1, price: 1500, status: 'Available', restaurantCharges: 0, barCharges: 0, laundryCharges: 0, hallCharges: 0, otherCharges: 0 },
-  
-  // 2nd Floor - Semi Premium Rooms (201 - 206)
-  { id: 'r201', roomNumber: '201', category: 'Semi Premium', floor: 2, price: 2500, status: 'Occupied', guestName: 'Amit Patel', guestPhone: '9123456789', checkInDate: '2026-07-05', checkOutDate: '2026-07-09', noOfGuests: 2, advancePaid: 2000, restaurantCharges: 1250, barCharges: 0, laundryCharges: 350, hallCharges: 0, otherCharges: 200 },
+  { id: 'r201', roomNumber: '201', category: 'Semi Premium', floor: 2, price: 2500, status: 'Available', restaurantCharges: 0, barCharges: 0, laundryCharges: 0, hallCharges: 0, otherCharges: 0 },
   { id: 'r202', roomNumber: '202', category: 'Semi Premium', floor: 2, price: 2500, status: 'Available', restaurantCharges: 0, barCharges: 0, laundryCharges: 0, hallCharges: 0, otherCharges: 0 },
   { id: 'r203', roomNumber: '203', category: 'Semi Premium', floor: 2, price: 2500, status: 'Available', restaurantCharges: 0, barCharges: 0, laundryCharges: 0, hallCharges: 0, otherCharges: 0 },
-  { id: 'r204', roomNumber: '204', category: 'Semi Premium', floor: 2, price: 2500, status: 'Cleaning', restaurantCharges: 0, barCharges: 0, laundryCharges: 0, hallCharges: 0, otherCharges: 0 },
+  { id: 'r204', roomNumber: '204', category: 'Semi Premium', floor: 2, price: 2500, status: 'Available', restaurantCharges: 0, barCharges: 0, laundryCharges: 0, hallCharges: 0, otherCharges: 0 },
   { id: 'r205', roomNumber: '205', category: 'Semi Premium', floor: 2, price: 2500, status: 'Available', restaurantCharges: 0, barCharges: 0, laundryCharges: 0, hallCharges: 0, otherCharges: 0 },
-  
-  // 3rd Floor - Premium Rooms & Suites (301 - 304)
-  { id: 'r301', roomNumber: '301', category: 'Premium', floor: 3, price: 4000, status: 'Occupied', guestName: 'Vikram Seth', guestPhone: '9898989898', checkInDate: '2026-07-06', checkOutDate: '2026-07-08', noOfGuests: 3, advancePaid: 3000, restaurantCharges: 600, barCharges: 2600, laundryCharges: 0, hallCharges: 5000, otherCharges: 0 },
+  { id: 'r301', roomNumber: '301', category: 'Premium', floor: 3, price: 4000, status: 'Available', restaurantCharges: 0, barCharges: 0, laundryCharges: 0, hallCharges: 0, otherCharges: 0 },
   { id: 'r302', roomNumber: '302', category: 'Premium', floor: 3, price: 4000, status: 'Available', restaurantCharges: 0, barCharges: 0, laundryCharges: 0, hallCharges: 0, otherCharges: 0 },
-  { id: 'r303', roomNumber: '303', category: 'Suite', floor: 3, price: 6500, status: 'Occupied', guestName: 'Dr. John Doe', guestPhone: '9555666777', checkInDate: '2026-07-03', checkOutDate: '2026-07-07', noOfGuests: 2, advancePaid: 5000, restaurantCharges: 2200, barCharges: 4100, laundryCharges: 850, hallCharges: 0, otherCharges: 100 },
+  { id: 'r303', roomNumber: '303', category: 'Suite', floor: 3, price: 6500, status: 'Available', restaurantCharges: 0, barCharges: 0, laundryCharges: 0, hallCharges: 0, otherCharges: 0 },
   { id: 'r304', roomNumber: '304', category: 'Suite', floor: 3, price: 6500, status: 'Available', restaurantCharges: 0, barCharges: 0, laundryCharges: 0, hallCharges: 0, otherCharges: 0 },
-  
-  // 4th Floor - Family Suites & Dormitory (401 - 402)
   { id: 'r401', roomNumber: '401', category: 'Family Suite', floor: 4, price: 8000, status: 'Available', restaurantCharges: 0, barCharges: 0, laundryCharges: 0, hallCharges: 0, otherCharges: 0 },
-  { id: 'r402', roomNumber: '402', category: 'Dormitory', floor: 4, price: 800, status: 'Occupied', guestName: 'Rahul & Group (4 pax)', guestPhone: '8765432109', checkInDate: '2026-07-05', checkOutDate: '2026-07-07', noOfGuests: 4, advancePaid: 1500, restaurantCharges: 980, barCharges: 0, laundryCharges: 150, hallCharges: 0, otherCharges: 0 }
-];
-
-const defaultPreBookings: PreBooking[] = [
-  { id: 'pb1', guestName: 'Pooja Hegde', phone: '9888777666', email: 'pooja@gmail.com', address: 'Mumbai, India', idProof: 'Aadhaar: 4455-6677-8899', gstNumber: '27AAAAA1111A1Z1', roomCategory: 'Suite', roomNumber: '304', bookingDate: '2026-07-05', checkInDate: '2026-07-08', checkOutDate: '2026-07-11', noOfGuests: 2, advancePaid: 2000, status: 'Confirmed' },
-  { id: 'pb2', guestName: 'Mark Wood', phone: '9444111222', email: 'mark@wood.co.uk', address: 'London, UK', idProof: 'Passport: Z898989', roomCategory: 'Premium', bookingDate: '2026-07-06', checkInDate: '2026-07-12', checkOutDate: '2026-07-15', noOfGuests: 1, advancePaid: 1500, status: 'Confirmed' }
-];
-
-const defaultMenuItems: MenuItem[] = [
-  // Restaurant items
-  { id: 'm1', name: 'Masala Dosa', category: 'Breakfast', price: 120, isBar: false, isAvailable: true },
-  { id: 'm2', name: 'Idli Vada Plate', category: 'Breakfast', price: 90, isBar: false, isAvailable: true },
-  { id: 'm3', name: 'Aloo Paratha (2 Pcs)', category: 'Breakfast', price: 110, isBar: false, isAvailable: true },
-  { id: 'm4', name: 'Butter Paneer Masala', category: 'Lunch', price: 280, isBar: false, isAvailable: true },
-  { id: 'm5', name: 'Dal Makhani', category: 'Lunch', price: 220, isBar: false, isAvailable: true },
-  { id: 'm6', name: 'Tandoori Roti', category: 'Lunch', price: 30, isBar: false, isAvailable: true },
-  { id: 'm7', name: 'Veg Biryani', category: 'Dinner', price: 260, isBar: false, isAvailable: true },
-  { id: 'm8', name: 'Chicken Dum Biryani', category: 'Dinner', price: 350, isBar: false, isAvailable: true },
-  { id: 'm9', name: 'Fresh Lime Soda', category: 'Beverages', price: 80, isBar: false, isAvailable: true },
-  { id: 'm10', name: 'Espresso Coffee', category: 'Beverages', price: 70, isBar: false, isAvailable: true },
-  { id: 'm11', name: 'Hot Chocolate Fudge', category: 'Desserts', price: 160, isBar: false, isAvailable: true },
-  { id: 'm12', name: 'Gulab Jamun (2 Pcs)', category: 'Desserts', price: 80, isBar: false, isAvailable: true },
-  
-  // Bar items
-  { id: 'b1', name: 'Kingfisher Premium 650ml', category: 'Beer', price: 220, isBar: true, isAvailable: true },
-  { id: 'b2', name: 'Budweiser Mild 330ml', category: 'Beer', price: 150, isBar: true, isAvailable: true },
-  { id: 'b3', name: 'Johnnie Walker Black Label 30ml', category: 'Whisky', price: 320, isBar: true, isAvailable: true },
-  { id: 'b4', name: 'Jack Daniels 30ml', category: 'Whisky', price: 300, isBar: true, isAvailable: true },
-  { id: 'b5', name: 'Old Monk Dark Rum 30ml', category: 'Rum', price: 120, isBar: true, isAvailable: true },
-  { id: 'b6', name: 'Smirnoff Vodka 30ml', category: 'Vodka', price: 160, isBar: true, isAvailable: true },
-  { id: 'b7', name: 'Jacob Creek Red Wine (Glass)', category: 'Wine', price: 350, isBar: true, isAvailable: true },
-  { id: 'b8', name: 'Sula Shiraz White Wine (Glass)', category: 'Wine', price: 320, isBar: true, isAvailable: true },
-  { id: 'b9', name: 'Classic Mojito', category: 'Cocktails', price: 280, isBar: true, isAvailable: true },
-  { id: 'b10', name: 'LIIT (Long Island Ice Tea)', category: 'Cocktails', price: 420, isBar: true, isAvailable: true },
-  { id: 'b11', name: 'Masala Peanut Fry', category: 'Snacks', price: 100, isBar: true, isAvailable: true },
-  { id: 'b12', name: 'Chicken Tikka Dry (Bar)', category: 'Snacks', price: 290, isBar: true, isAvailable: true }
-];
-
-const defaultOrders: Order[] = [
-  { id: 'o1', orderNumber: 'ORD-1001', type: 'Room', roomNumber: '101', guestName: 'Rajesh Kumar', items: [{ menuItemId: 'm4', name: 'Butter Paneer Masala', price: 280, quantity: 1 }, { menuItemId: 'm6', name: 'Tandoori Roti', price: 30, quantity: 3 }], subtotal: 370, tax: 66.6, total: 436.6, status: 'PostedToRoom', isBar: false, timestamp: '2026-07-06 09:30 AM' },
-  { id: 'o2', orderNumber: 'ORD-1002', type: 'Room', roomNumber: '301', guestName: 'Vikram Seth', items: [{ menuItemId: 'b3', name: 'Johnnie Walker Black Label 30ml', price: 320, quantity: 4 }, { menuItemId: 'b11', name: 'Masala Peanut Fry', price: 100, quantity: 2 }], subtotal: 1480, tax: 296, total: 1776, status: 'PostedToRoom', isBar: true, timestamp: '2026-07-06 08:45 PM' }
-];
-
-const defaultLaundryOrders: LaundryOrder[] = [
-  { id: 'l1', orderNumber: 'LND-2001', roomNumber: '101', guestName: 'Rajesh Kumar', items: [{ itemType: 'Clothes', quantity: 3, price: 40 }], isExpress: false, totalPrice: 120, status: 'Completed', timestamp: '2026-07-05 11:00 AM' },
-  { id: 'l2', orderNumber: 'LND-2002', roomNumber: '201', guestName: 'Amit Patel', items: [{ itemType: 'Blanket', quantity: 1, price: 150 }, { itemType: 'Dry Clean', quantity: 2, price: 100 }], isExpress: false, totalPrice: 350, status: 'Pending', timestamp: '2026-07-06 02:00 PM' }
-];
-
-const defaultHallBookings: HallBooking[] = [
-  { id: 'hb1', bookingNumber: 'HAL-5001', hallType: 'Banquet Hall', guestName: 'Vikram Seth', phone: '9898989898', date: '2026-07-06', timeSlot: 'Evening', advancePaid: 2000, foodPackage: 'Gold (Veg + Non-Veg)', foodPrice: 2500, decorationPrice: 1500, soundSystemPrice: 1000, projectorPrice: 0, cleaningCharge: 500, hallRent: 1500, totalPrice: 7000, roomNumber: '301', status: 'Confirmed' },
-  { id: 'hb2', bookingNumber: 'HAL-5002', hallType: 'Marriage Hall', guestName: 'Mehta Family', phone: '9333222111', date: '2026-07-15', timeSlot: 'Full Day', advancePaid: 10000, foodPackage: 'Platinum Premium', foodPrice: 12000, decorationPrice: 8000, soundSystemPrice: 3000, projectorPrice: 1000, cleaningCharge: 2000, hallRent: 20000, totalPrice: 46000, status: 'Confirmed' }
-];
-
-const defaultInventory: InventoryItem[] = [
-  { id: 'i1', name: 'Johnnie Walker Black Label', category: 'Liquor', stock: 12, minStock: 5, unit: 'bottle' },
-  { id: 'i2', name: 'Kingfisher Premium 650ml', category: 'Liquor', stock: 45, minStock: 20, unit: 'bottle' },
-  { id: 'i3', name: 'Rice Basmati', category: 'Food', stock: 8, minStock: 10, unit: 'kg' }, // LOW STOCK
-  { id: 'i4', name: 'Liquid Detergent Premium', category: 'Laundry', stock: 4, minStock: 5, unit: 'liters' }, // LOW STOCK
-  { id: 'i5', name: 'Toiletries Kit Set', category: 'Room Supplies', stock: 120, minStock: 30, unit: 'pcs' },
-  { id: 'i6', name: 'Bleach Solution', category: 'Cleaning', stock: 15, minStock: 5, unit: 'liters' },
-  { id: 'i7', name: 'Bed Sheets King Size', category: 'Room Supplies', stock: 50, minStock: 15, unit: 'pcs' }
-];
-
-const defaultPurchaseLogs: PurchaseLog[] = [
-  { id: 'p1', itemName: 'Johnnie Walker Black Label', category: 'Liquor', quantity: 6, unit: 'bottle', supplier: 'United Beverages Ltd', pricePerUnit: 2200, gstAmount: 2376, totalAmount: 15576, date: '2026-07-02' },
-  { id: 'p2', itemName: 'Rice Basmati', category: 'Food', quantity: 20, unit: 'kg', supplier: 'Agro Foods Distributor', pricePerUnit: 110, gstAmount: 110, totalAmount: 2310, date: '2026-07-03' }
-];
-
-const defaultAuditLogs: AuditLog[] = [
-  { id: 'a1', username: 'System', role: 'admin', action: 'System Init', details: 'HotelVista ERP initialization completed with default templates.', timestamp: '2026-07-06 10:00 AM' }
-];
-
-const defaultNotifications: AppNotification[] = [
-  { id: 'n1', type: 'stock', message: 'Low Stock Alert: Rice Basmati is below threshold (8kg remaining, min 10kg)', timestamp: '2026-07-06 11:30 AM', read: false },
-  { id: 'n2', type: 'stock', message: 'Low Stock Alert: Liquid Detergent Premium is low (4L remaining, min 5L)', timestamp: '2026-07-06 12:45 PM', read: false },
-  { id: 'n3', type: 'checkout', message: 'Room 101 guest (Rajesh Kumar) checkout due today', timestamp: '2026-07-06 02:00 PM', read: false }
+  { id: 'r402', roomNumber: '402', category: 'Dormitory', floor: 4, price: 800, status: 'Available', restaurantCharges: 0, barCharges: 0, laundryCharges: 0, hallCharges: 0, otherCharges: 0 }
 ];
 
 const defaultSettings: HotelSettings = {
@@ -354,8 +295,8 @@ const defaultSettings: HotelSettings = {
   phone: '+91 98765 43210',
   email: 'bookings@hotelvistaresort.com',
   gstNumber: '33AAAAA1111A1ZA',
-  taxRate: 18, // 18% GST (9% CGST + 9% SGST)
-  barTaxRate: 20, // 20% Vat/Bar Tax
+  taxRate: 18,
+  barTaxRate: 20,
   invoicePrefix: 'HV-2026-'
 };
 
@@ -364,6 +305,24 @@ const defaultSettings: HotelSettings = {
 // ==========================================
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  // Authentication states
+  const [user, setUser] = useState<User | null>(null);
+  const [loadingAuth, setLoadingAuth] = useState(true);
+  const [tenantId, setTenantId] = useState<string | null>(null);
+
+  // Local ERP states, initialized to empty and filled via Firestore subscriptions
+  const [rooms, setRooms] = useState<Room[]>([]);
+  const [preBookings, setPreBookings] = useState<PreBooking[]>([]);
+  const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
+  const [orders, setOrders] = useState<Order[]>([]);
+  const [laundryOrders, setLaundryOrders] = useState<LaundryOrder[]>([]);
+  const [hallBookings, setHallBookings] = useState<HallBooking[]>([]);
+  const [inventory, setInventory] = useState<InventoryItem[]>([]);
+  const [purchaseLogs, setPurchaseLogs] = useState<PurchaseLog[]>([]);
+  const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
+  const [notifications, setNotifications] = useState<AppNotification[]>([]);
+  const [settings, setSettings] = useState<HotelSettings>(defaultSettings);
+
   const [userRole, setUserRole] = useState<UserRole>(() => {
     const saved = localStorage.getItem('hv_user_role');
     return (saved as UserRole) || 'admin';
@@ -374,66 +333,21 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return saved === 'true';
   });
 
-  const [rooms, setRooms] = useState<Room[]>(() => {
-    const saved = localStorage.getItem('hv_rooms');
-    return saved ? JSON.parse(saved) : defaultRooms;
-  });
-
-  const [preBookings, setPreBookings] = useState<PreBooking[]>(() => {
-    const saved = localStorage.getItem('hv_pre_bookings');
-    return saved ? JSON.parse(saved) : defaultPreBookings;
-  });
-
-  const [menuItems, setMenuItems] = useState<MenuItem[]>(() => {
-    const saved = localStorage.getItem('hv_menu_items');
-    return saved ? JSON.parse(saved) : defaultMenuItems;
-  });
-
-  const [orders, setOrders] = useState<Order[]>(() => {
-    const saved = localStorage.getItem('hv_orders');
-    return saved ? JSON.parse(saved) : defaultOrders;
-  });
-
-  const [laundryOrders, setLaundryOrders] = useState<LaundryOrder[]>(() => {
-    const saved = localStorage.getItem('hv_laundry_orders');
-    return saved ? JSON.parse(saved) : defaultLaundryOrders;
-  });
-
-  const [hallBookings, setHallBookings] = useState<HallBooking[]>(() => {
-    const saved = localStorage.getItem('hv_hall_bookings');
-    return saved ? JSON.parse(saved) : defaultHallBookings;
-  });
-
-  const [inventory, setInventory] = useState<InventoryItem[]>(() => {
-    const saved = localStorage.getItem('hv_inventory');
-    return saved ? JSON.parse(saved) : defaultInventory;
-  });
-
-  const [purchaseLogs, setPurchaseLogs] = useState<PurchaseLog[]>(() => {
-    const saved = localStorage.getItem('hv_purchase_logs');
-    return saved ? JSON.parse(saved) : defaultPurchaseLogs;
-  });
-
-  const [auditLogs, setAuditLogs] = useState<AuditLog[]>(() => {
-    const saved = localStorage.getItem('hv_audit_logs');
-    return saved ? JSON.parse(saved) : defaultAuditLogs;
-  });
-
-  const [notifications, setNotifications] = useState<AppNotification[]>(() => {
-    const saved = localStorage.getItem('hv_notifications');
-    return saved ? JSON.parse(saved) : defaultNotifications;
-  });
-
-  const [settings, setSettings] = useState<HotelSettings>(() => {
-    const saved = localStorage.getItem('hv_settings');
-    return saved ? JSON.parse(saved) : defaultSettings;
-  });
-
-  // Save changes to LocalStorage
+  // Track Auth state changes
   useEffect(() => {
-    localStorage.setItem('hv_user_role', userRole);
-  }, [userRole]);
+    if (!isFirebaseConfigured) {
+      setLoadingAuth(false);
+      return;
+    }
+    const unsub = onAuthStateChanged(auth, (firebaseUser) => {
+      setUser(firebaseUser);
+      setTenantId(firebaseUser ? firebaseUser.uid : null);
+      setLoadingAuth(false);
+    });
+    return unsub;
+  }, []);
 
+  // Theme Sync effect (remains local)
   useEffect(() => {
     localStorage.setItem('hv_dark_mode', String(darkMode));
     if (darkMode) {
@@ -444,52 +358,174 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, [darkMode]);
 
   useEffect(() => {
-    localStorage.setItem('hv_rooms', JSON.stringify(rooms));
-  }, [rooms]);
+    localStorage.setItem('hv_user_role', userRole);
+  }, [userRole]);
 
+  // Firestore subscriptions (active only when user is logged in / tenantId is set)
+  
+  // Settings sync
   useEffect(() => {
-    localStorage.setItem('hv_pre_bookings', JSON.stringify(preBookings));
-  }, [preBookings]);
+    if (!tenantId) return;
+    const unsub = onSnapshot(doc(db, 'tenants', tenantId, 'settings', 'hotel'), (snapshot) => {
+      if (snapshot.exists()) {
+        setSettings(snapshot.data() as HotelSettings);
+      } else {
+        setDoc(doc(db, 'tenants', tenantId, 'settings', 'hotel'), defaultSettings);
+      }
+    });
+    return unsub;
+  }, [tenantId]);
 
+  // Rooms sync
   useEffect(() => {
-    localStorage.setItem('hv_menu_items', JSON.stringify(menuItems));
-  }, [menuItems]);
+    if (!tenantId) return;
+    const unsub = onSnapshot(collection(db, 'tenants', tenantId, 'rooms'), (snapshot) => {
+      if (snapshot.empty) {
+        // Seed default rooms
+        const batch = writeBatch(db);
+        defaultRooms.forEach((r) => {
+          batch.set(doc(db, 'tenants', tenantId, 'rooms', r.id), r);
+        });
+        batch.commit();
+      } else {
+        const data = snapshot.docs.map(doc => doc.data() as Room);
+        data.sort((a, b) => a.roomNumber.localeCompare(b.roomNumber, undefined, { numeric: true }));
+        setRooms(data);
+      }
+    });
+    return unsub;
+  }, [tenantId]);
 
+  // Pre-Bookings sync
   useEffect(() => {
-    localStorage.setItem('hv_orders', JSON.stringify(orders));
-  }, [orders]);
+    if (!tenantId) return;
+    const unsub = onSnapshot(collection(db, 'tenants', tenantId, 'preBookings'), (snapshot) => {
+      const data = snapshot.docs.map(doc => doc.data() as PreBooking);
+      data.sort((a, b) => b.bookingDate.localeCompare(a.bookingDate));
+      setPreBookings(data);
+    });
+    return unsub;
+  }, [tenantId]);
 
+  // Menu items sync
   useEffect(() => {
-    localStorage.setItem('hv_laundry_orders', JSON.stringify(laundryOrders));
-  }, [laundryOrders]);
+    if (!tenantId) return;
+    const unsub = onSnapshot(collection(db, 'tenants', tenantId, 'menuItems'), (snapshot) => {
+      const data = snapshot.docs.map(doc => doc.data() as MenuItem);
+      setMenuItems(data);
+    });
+    return unsub;
+  }, [tenantId]);
 
+  // Orders sync
   useEffect(() => {
-    localStorage.setItem('hv_hall_bookings', JSON.stringify(hallBookings));
-  }, [hallBookings]);
+    if (!tenantId) return;
+    const unsub = onSnapshot(collection(db, 'tenants', tenantId, 'orders'), (snapshot) => {
+      const data = snapshot.docs.map(doc => doc.data() as Order);
+      data.sort((a, b) => b.timestamp.localeCompare(a.timestamp));
+      setOrders(data);
+    });
+    return unsub;
+  }, [tenantId]);
 
+  // Laundry Orders sync
   useEffect(() => {
-    localStorage.setItem('hv_inventory', JSON.stringify(inventory));
-  }, [inventory]);
+    if (!tenantId) return;
+    const unsub = onSnapshot(collection(db, 'tenants', tenantId, 'laundryOrders'), (snapshot) => {
+      const data = snapshot.docs.map(doc => doc.data() as LaundryOrder);
+      data.sort((a, b) => b.timestamp.localeCompare(a.timestamp));
+      setLaundryOrders(data);
+    });
+    return unsub;
+  }, [tenantId]);
 
+  // Hall Bookings sync
   useEffect(() => {
-    localStorage.setItem('hv_purchase_logs', JSON.stringify(purchaseLogs));
-  }, [purchaseLogs]);
+    if (!tenantId) return;
+    const unsub = onSnapshot(collection(db, 'tenants', tenantId, 'hallBookings'), (snapshot) => {
+      const data = snapshot.docs.map(doc => doc.data() as HallBooking);
+      setHallBookings(data);
+    });
+    return unsub;
+  }, [tenantId]);
 
+  // Inventory sync
   useEffect(() => {
-    localStorage.setItem('hv_audit_logs', JSON.stringify(auditLogs));
-  }, [auditLogs]);
+    if (!tenantId) return;
+    const unsub = onSnapshot(collection(db, 'tenants', tenantId, 'inventory'), (snapshot) => {
+      const data = snapshot.docs.map(doc => doc.data() as InventoryItem);
+      setInventory(data);
+    });
+    return unsub;
+  }, [tenantId]);
 
+  // Purchase logs sync
   useEffect(() => {
-    localStorage.setItem('hv_notifications', JSON.stringify(notifications));
-  }, [notifications]);
+    if (!tenantId) return;
+    const unsub = onSnapshot(collection(db, 'tenants', tenantId, 'purchaseLogs'), (snapshot) => {
+      const data = snapshot.docs.map(doc => doc.data() as PurchaseLog);
+      data.sort((a, b) => b.date.localeCompare(a.date));
+      setPurchaseLogs(data);
+    });
+    return unsub;
+  }, [tenantId]);
 
+  // Audit Logs sync
   useEffect(() => {
-    localStorage.setItem('hv_settings', JSON.stringify(settings));
-  }, [settings]);
+    if (!tenantId) return;
+    const unsub = onSnapshot(collection(db, 'tenants', tenantId, 'auditLogs'), (snapshot) => {
+      if (snapshot.empty) {
+        // Seed only a single system init audit log rather than mock guest records
+        const id = 'a_init';
+        const initLog: AuditLog = {
+          id,
+          username: 'System',
+          role: 'admin',
+          action: 'Workspace Init',
+          details: 'Your real-time tenant environment is successfully initialized.',
+          timestamp: new Date().toLocaleString()
+        };
+        setDoc(doc(db, 'tenants', tenantId, 'auditLogs', id), initLog);
+      } else {
+        const data = snapshot.docs.map(doc => doc.data() as AuditLog);
+        data.sort((a, b) => b.timestamp.localeCompare(a.timestamp));
+        setAuditLogs(data);
+      }
+    });
+    return unsub;
+  }, [tenantId]);
+
+  // Notifications sync
+  useEffect(() => {
+    if (!tenantId) return;
+    const unsub = onSnapshot(collection(db, 'tenants', tenantId, 'notifications'), (snapshot) => {
+      const data = snapshot.docs.map(doc => doc.data() as AppNotification);
+      data.sort((a, b) => b.timestamp.localeCompare(a.timestamp));
+      setNotifications(data);
+    });
+    return unsub;
+  }, [tenantId]);
 
   // ==========================================
-  // STATE MUTATION FUNCTIONS
+  // STATE MUTATION FUNCTIONS (FIRESTORE)
   // ==========================================
+
+  const logout = async () => {
+    if (isFirebaseConfigured) {
+      await signOut(auth);
+      // Clear local states immediately for security/UX
+      setRooms([]);
+      setPreBookings([]);
+      setMenuItems([]);
+      setOrders([]);
+      setLaundryOrders([]);
+      setHallBookings([]);
+      setInventory([]);
+      setPurchaseLogs([]);
+      setAuditLogs([]);
+      setNotifications([]);
+    }
+  };
 
   const switchRole = (role: UserRole) => {
     setUserRole(role);
@@ -500,141 +536,155 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setDarkMode(!darkMode);
   };
 
-  const addAudit = (action: string, details: string, oldValue?: string, newValue?: string) => {
+  const addAudit = async (action: string, details: string, oldValue?: string, newValue?: string) => {
+    if (!tenantId) return;
+    const id = 'a_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7);
     const newLog: AuditLog = {
-      id: 'a_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5),
+      id,
       username: userRole === 'admin' ? 'Admin User' : `${userRole.charAt(0).toUpperCase() + userRole.slice(1)} Staff`,
       role: userRole,
       action,
       details,
-      oldValue,
-      newValue,
+      oldValue: oldValue || '',
+      newValue: newValue || '',
       timestamp: new Date().toLocaleString()
     };
-    setAuditLogs(prev => [newLog, ...prev]);
+    try {
+      await setDoc(doc(db, 'tenants', tenantId, 'auditLogs', id), newLog);
+    } catch (e) {
+      console.error('Failed to write audit log:', e);
+    }
   };
 
   // CHECK IN
-  const checkInRoom = (roomId: string, guestInfo: { name: string; phone: string; email?: string; address?: string; idProof: string; gstNumber?: string; noOfGuests: number; advancePaid: number }) => {
-    setRooms(prev => prev.map(room => {
-      if (room.id === roomId) {
-        return {
-          ...room,
-          status: 'Occupied',
-          guestName: guestInfo.name,
-          guestPhone: guestInfo.phone,
-          checkInDate: new Date().toISOString().split('T')[0],
-          checkOutDate: new Date(Date.now() + 86400000).toISOString().split('T')[0], // default 1 day later
-          noOfGuests: guestInfo.noOfGuests,
-          advancePaid: guestInfo.advancePaid,
-          restaurantCharges: 0,
-          barCharges: 0,
-          laundryCharges: 0,
-          hallCharges: 0,
-          otherCharges: 0
-        };
-      }
-      return room;
-    }));
-    addAudit('Check-In', `Guest ${guestInfo.name} checked into Room ${rooms.find(r => r.id === roomId)?.roomNumber}`, undefined, 'Occupied');
+  const checkInRoom = async (roomId: string, guestInfo: { name: string; phone: string; email?: string; address?: string; idProof: string; gstNumber?: string; noOfGuests: number; advancePaid: number }) => {
+    if (!tenantId) return;
+    try {
+      const roomRef = doc(db, 'tenants', tenantId, 'rooms', roomId);
+      await updateDoc(roomRef, {
+        status: 'Occupied',
+        guestName: guestInfo.name,
+        guestPhone: guestInfo.phone,
+        checkInDate: new Date().toISOString().split('T')[0],
+        checkOutDate: new Date(Date.now() + 86400000).toISOString().split('T')[0], // default 1 day later
+        noOfGuests: guestInfo.noOfGuests,
+        advancePaid: guestInfo.advancePaid,
+        restaurantCharges: 0,
+        barCharges: 0,
+        laundryCharges: 0,
+        hallCharges: 0,
+        otherCharges: 0
+      });
+      await addAudit('Check-In', `Guest ${guestInfo.name} checked into Room ${rooms.find(r => r.id === roomId)?.roomNumber}`, undefined, 'Occupied');
+    } catch (e) {
+      console.error(e);
+    }
   };
 
   // CHECK OUT & PAYMENT RECEIVE
-  const checkOutRoom = (roomId: string, paymentDetails: { method: 'Cash' | 'Card' | 'UPI' | 'Split'; discount: number; splitDetails?: string }) => {
+  const checkOutRoom = async (roomId: string, paymentDetails: { method: 'Cash' | 'Card' | 'UPI' | 'Split'; discount: number; splitDetails?: string }) => {
+    if (!tenantId) return;
     const room = rooms.find(r => r.id === roomId);
     if (!room) return;
 
-    setRooms(prev => prev.map(r => {
-      if (r.id === roomId) {
-        return {
-          ...r,
-          status: 'Cleaning', // Send to cleaning immediately
-          guestName: undefined,
-          guestPhone: undefined,
-          checkInDate: undefined,
-          checkOutDate: undefined,
-          noOfGuests: undefined,
-          advancePaid: 0,
-          restaurantCharges: 0,
-          barCharges: 0,
-          laundryCharges: 0,
-          hallCharges: 0,
-          otherCharges: 0
-        };
-      }
-      return r;
-    }));
+    try {
+      const batch = writeBatch(db);
 
-    // Add checkout notification if needed
-    setNotifications(prev => prev.filter(n => !n.message.includes(`Room ${room.roomNumber} guest`)));
+      // Reset Room
+      const roomRef = doc(db, 'tenants', tenantId, 'rooms', roomId);
+      batch.update(roomRef, {
+        status: 'Cleaning',
+        guestName: '',
+        guestPhone: '',
+        checkInDate: '',
+        checkOutDate: '',
+        noOfGuests: 0,
+        advancePaid: 0,
+        restaurantCharges: 0,
+        barCharges: 0,
+        laundryCharges: 0,
+        hallCharges: 0,
+        otherCharges: 0
+      });
 
-    addAudit('Check-Out', `Guest ${room.guestName} checked out of Room ${room.roomNumber}. Paid via ${paymentDetails.method}. Discount: ₹${paymentDetails.discount}`, 'Occupied', 'Cleaning');
+      // Clear notifications related to this room checkout
+      const roomNotifications = notifications.filter(n => n.message.includes(`Room ${room.roomNumber} guest`));
+      roomNotifications.forEach(n => {
+        batch.delete(doc(db, 'tenants', tenantId, 'notifications', n.id));
+      });
+
+      await batch.commit();
+      await addAudit('Check-Out', `Guest ${room.guestName} checked out of Room ${room.roomNumber}. Paid via ${paymentDetails.method}. Discount: ₹${paymentDetails.discount}`, 'Occupied', 'Cleaning');
+    } catch (e) {
+      console.error(e);
+    }
   };
 
   // ROOM TRANSFER
-  const transferRoom = (fromRoomId: string, toRoomId: string) => {
+  const transferRoom = async (fromRoomId: string, toRoomId: string) => {
+    if (!tenantId) return;
     const sourceRoom = rooms.find(r => r.id === fromRoomId);
     const destRoom = rooms.find(r => r.id === toRoomId);
     if (!sourceRoom || !destRoom) return;
 
-    setRooms(prev => prev.map(r => {
-      if (r.id === fromRoomId) {
-        return {
-          ...r,
-          status: 'Cleaning',
-          guestName: undefined,
-          guestPhone: undefined,
-          checkInDate: undefined,
-          checkOutDate: undefined,
-          noOfGuests: undefined,
-          advancePaid: 0,
-          restaurantCharges: 0,
-          barCharges: 0,
-          laundryCharges: 0,
-          hallCharges: 0,
-          otherCharges: 0
-        };
-      }
-      if (r.id === toRoomId) {
-        return {
-          ...r,
-          status: 'Occupied',
-          guestName: sourceRoom.guestName,
-          guestPhone: sourceRoom.guestPhone,
-          checkInDate: sourceRoom.checkInDate,
-          checkOutDate: sourceRoom.checkOutDate,
-          noOfGuests: sourceRoom.noOfGuests,
-          advancePaid: sourceRoom.advancePaid,
-          restaurantCharges: sourceRoom.restaurantCharges,
-          barCharges: sourceRoom.barCharges,
-          laundryCharges: sourceRoom.laundryCharges,
-          hallCharges: sourceRoom.hallCharges,
-          otherCharges: sourceRoom.otherCharges
-        };
-      }
-      return r;
-    }));
+    try {
+      const batch = writeBatch(db);
 
-    addAudit('Room Transfer', `Transferred guest ${sourceRoom.guestName} from Room ${sourceRoom.roomNumber} to Room ${destRoom.roomNumber}`);
+      batch.update(doc(db, 'tenants', tenantId, 'rooms', fromRoomId), {
+        status: 'Cleaning',
+        guestName: '',
+        guestPhone: '',
+        checkInDate: '',
+        checkOutDate: '',
+        noOfGuests: 0,
+        advancePaid: 0,
+        restaurantCharges: 0,
+        barCharges: 0,
+        laundryCharges: 0,
+        hallCharges: 0,
+        otherCharges: 0
+      });
+
+      batch.update(doc(db, 'tenants', tenantId, 'rooms', toRoomId), {
+        status: 'Occupied',
+        guestName: sourceRoom.guestName || '',
+        guestPhone: sourceRoom.guestPhone || '',
+        checkInDate: sourceRoom.checkInDate || '',
+        checkOutDate: sourceRoom.checkOutDate || '',
+        noOfGuests: sourceRoom.noOfGuests || 0,
+        advancePaid: sourceRoom.advancePaid || 0,
+        restaurantCharges: sourceRoom.restaurantCharges || 0,
+        barCharges: sourceRoom.barCharges || 0,
+        laundryCharges: sourceRoom.laundryCharges || 0,
+        hallCharges: sourceRoom.hallCharges || 0,
+        otherCharges: sourceRoom.otherCharges || 0
+      });
+
+      await batch.commit();
+      await addAudit('Room Transfer', `Transferred guest ${sourceRoom.guestName} from Room ${sourceRoom.roomNumber} to Room ${destRoom.roomNumber}`);
+    } catch (e) {
+      console.error(e);
+    }
   };
 
   // UPDATE HOUSEKEEPING/CLEANING
-  const updateHousekeeping = (roomId: string, status: RoomStatus) => {
+  const updateHousekeeping = async (roomId: string, status: RoomStatus) => {
+    if (!tenantId) return;
     const room = rooms.find(r => r.id === roomId);
-    const oldStatus = room?.status;
-    
-    setRooms(prev => prev.map(r => {
-      if (r.id === roomId) {
-        return { ...r, status };
-      }
-      return r;
-    }));
-    
-    addAudit('Housekeeping Change', `Room ${room?.roomNumber} status changed to ${status}`, oldStatus, status);
+    if (!room) return;
+    const oldStatus = room.status;
+
+    try {
+      await updateDoc(doc(db, 'tenants', tenantId, 'rooms', roomId), { status });
+      await addAudit('Housekeeping Change', `Room ${room.roomNumber} status changed to ${status}`, oldStatus, status);
+    } catch (e) {
+      console.error(e);
+    }
   };
 
   // EXTEND STAY
-  const extendStay = (roomId: string, days: number) => {
+  const extendStay = async (roomId: string, days: number) => {
+    if (!tenantId) return;
     const room = rooms.find(r => r.id === roomId);
     if (!room || !room.checkOutDate) return;
 
@@ -643,67 +693,84 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     currentOutDate.setDate(currentOutDate.getDate() + days);
     const newDate = currentOutDate.toISOString().split('T')[0];
 
-    setRooms(prev => prev.map(r => {
-      if (r.id === roomId) {
-        return { ...r, checkOutDate: newDate };
-      }
-      return r;
-    }));
-
-    addAudit('Extend Stay', `Room ${room.roomNumber} checkout date extended by ${days} days`, oldDate, newDate);
+    try {
+      await updateDoc(doc(db, 'tenants', tenantId, 'rooms', roomId), { checkOutDate: newDate });
+      await addAudit('Extend Stay', `Room ${room.roomNumber} checkout date extended by ${days} days`, oldDate, newDate);
+    } catch (e) {
+      console.error(e);
+    }
   };
 
   // PRE-BOOKING ACTIONS
-  const addPreBooking = (booking: Omit<PreBooking, 'id' | 'status' | 'bookingDate'>) => {
+  const addPreBooking = async (booking: Omit<PreBooking, 'id' | 'status' | 'bookingDate'>) => {
+    if (!tenantId) return;
+    const id = 'pb_' + Date.now();
     const newBooking: PreBooking = {
       ...booking,
-      id: 'pb_' + Date.now(),
+      id,
       status: 'Confirmed',
       bookingDate: new Date().toISOString().split('T')[0]
     };
-    setPreBookings(prev => [newBooking, ...prev]);
-    addAudit('Pre-Booking', `Created reservation for ${booking.guestName} in ${booking.roomCategory}`);
+    try {
+      await setDoc(doc(db, 'tenants', tenantId, 'preBookings', id), newBooking);
+      await addAudit('Pre-Booking', `Created reservation for ${booking.guestName} in ${booking.roomCategory}`);
+    } catch (e) {
+      console.error(e);
+    }
   };
 
-  const cancelPreBooking = (id: string) => {
-    setPreBookings(prev => prev.map(b => b.id === id ? { ...b, status: 'Cancelled' as const } : b));
+  const cancelPreBooking = async (id: string) => {
+    if (!tenantId) return;
     const booking = preBookings.find(b => b.id === id);
-    addAudit('Cancel Pre-Booking', `Cancelled reservation for ${booking?.guestName}`);
+    if (!booking) return;
+
+    try {
+      await updateDoc(doc(db, 'tenants', tenantId, 'preBookings', id), { status: 'Cancelled' });
+      await addAudit('Cancel Pre-Booking', `Cancelled reservation for ${booking.guestName}`);
+    } catch (e) {
+      console.error(e);
+    }
   };
 
-  const confirmPreBookingCheckIn = (id: string, roomId: string) => {
+  const confirmPreBookingCheckIn = async (id: string, roomId: string) => {
+    if (!tenantId) return;
     const booking = preBookings.find(b => b.id === id);
     const room = rooms.find(r => r.id === roomId);
     if (!booking || !room) return;
 
-    setPreBookings(prev => prev.map(b => b.id === id ? { ...b, status: 'CheckedIn' as const, roomNumber: room.roomNumber } : b));
-    
-    setRooms(prev => prev.map(r => {
-      if (r.id === roomId) {
-        return {
-          ...r,
-          status: 'Occupied',
-          guestName: booking.guestName,
-          guestPhone: booking.phone,
-          checkInDate: booking.checkInDate,
-          checkOutDate: booking.checkOutDate,
-          noOfGuests: booking.noOfGuests,
-          advancePaid: booking.advancePaid,
-          restaurantCharges: 0,
-          barCharges: 0,
-          laundryCharges: 0,
-          hallCharges: 0,
-          otherCharges: 0
-        };
-      }
-      return r;
-    }));
+    try {
+      const batch = writeBatch(db);
 
-    addAudit('Check-In (Pre-Booking)', `Checked in reserved guest ${booking.guestName} to Room ${room.roomNumber}`, 'Reserved', 'Occupied');
+      batch.update(doc(db, 'tenants', tenantId, 'preBookings', id), {
+        status: 'CheckedIn',
+        roomNumber: room.roomNumber
+      });
+
+      batch.update(doc(db, 'tenants', tenantId, 'rooms', roomId), {
+        status: 'Occupied',
+        guestName: booking.guestName,
+        guestPhone: booking.phone,
+        checkInDate: booking.checkInDate,
+        checkOutDate: booking.checkOutDate,
+        noOfGuests: booking.noOfGuests,
+        advancePaid: booking.advancePaid,
+        restaurantCharges: 0,
+        barCharges: 0,
+        laundryCharges: 0,
+        hallCharges: 0,
+        otherCharges: 0
+      });
+
+      await batch.commit();
+      await addAudit('Check-In (Pre-Booking)', `Checked in reserved guest ${booking.guestName} to Room ${room.roomNumber}`, 'Reserved', 'Occupied');
+    } catch (e) {
+      console.error(e);
+    }
   };
 
   // ADD RESTAURANT OR BAR ORDER
-  const addRestaurantBarOrder = (order: Omit<Order, 'id' | 'orderNumber' | 'timestamp' | 'tax' | 'total' | 'status'>) => {
+  const addRestaurantBarOrder = async (order: Omit<Order, 'id' | 'orderNumber' | 'timestamp' | 'tax' | 'total' | 'status'>) => {
+    if (!tenantId) return;
     const newId = 'o_' + Date.now();
     const prefix = order.isBar ? 'BAR-' : 'KOT-';
     const orderNo = prefix + Math.floor(1000 + Math.random() * 9000);
@@ -724,36 +791,45 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       status: isPostedToRoom ? 'PostedToRoom' : 'Paid'
     };
 
-    setOrders(prev => [finalOrder, ...prev]);
+    try {
+      const batch = writeBatch(db);
 
-    // If linked to Room, post charges immediately
-    if (isPostedToRoom) {
-      setRooms(prev => prev.map(r => {
-        if (r.roomNumber === order.roomNumber) {
-          return {
-            ...r,
-            restaurantCharges: order.isBar ? r.restaurantCharges : r.restaurantCharges + grandTotal,
-            barCharges: order.isBar ? r.barCharges + grandTotal : r.barCharges
-          };
+      batch.set(doc(db, 'tenants', tenantId, 'orders', newId), finalOrder);
+
+      // If linked to Room, post charges immediately
+      if (isPostedToRoom) {
+        const roomMatch = rooms.find(r => r.roomNumber === order.roomNumber);
+        if (roomMatch) {
+          batch.update(doc(db, 'tenants', tenantId, 'rooms', roomMatch.id), {
+            restaurantCharges: order.isBar ? roomMatch.restaurantCharges : roomMatch.restaurantCharges + grandTotal,
+            barCharges: order.isBar ? roomMatch.barCharges + grandTotal : roomMatch.barCharges
+          });
         }
-        return r;
-      }));
-      addAudit('POS Link to Room', `Posted ${order.isBar ? 'Bar' : 'Restaurant'} order ${orderNo} (₹${grandTotal}) to Room ${order.roomNumber}`);
-    } else {
-      addAudit('POS Sale', `Cash/Direct Sale ${orderNo} of ₹${grandTotal}`);
-    }
-
-    // Update stock levels based on menu items sold
-    order.items.forEach(orderItem => {
-      const match = inventory.find(inv => inv.name.toLowerCase() === orderItem.name.toLowerCase());
-      if (match) {
-        updateStockLevel(match.id, orderItem.quantity, 'out');
       }
-    });
+
+      await batch.commit();
+
+      if (isPostedToRoom) {
+        await addAudit('POS Link to Room', `Posted ${order.isBar ? 'Bar' : 'Restaurant'} order ${orderNo} (₹${grandTotal}) to Room ${order.roomNumber}`);
+      } else {
+        await addAudit('POS Sale', `Cash/Direct Sale ${orderNo} of ₹${grandTotal}`);
+      }
+
+      // Update stock levels based on menu items sold
+      order.items.forEach(async (orderItem) => {
+        const match = inventory.find(inv => inv.name.toLowerCase() === orderItem.name.toLowerCase());
+        if (match) {
+          await updateStockLevel(match.id, orderItem.quantity, 'out');
+        }
+      });
+    } catch (e) {
+      console.error(e);
+    }
   };
 
   // LAUNDRY ORDERS
-  const addLaundryOrder = (order: Omit<LaundryOrder, 'id' | 'orderNumber' | 'timestamp' | 'status'>) => {
+  const addLaundryOrder = async (order: Omit<LaundryOrder, 'id' | 'orderNumber' | 'timestamp' | 'status'>) => {
+    if (!tenantId) return;
     const newId = 'lnd_' + Date.now();
     const orderNo = 'LND-' + Math.floor(1000 + Math.random() * 9000);
 
@@ -765,36 +841,50 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       status: 'Pending'
     };
 
-    setLaundryOrders(prev => [finalOrder, ...prev]);
+    try {
+      const batch = writeBatch(db);
 
-    // Automatically route to Room Bill
-    setRooms(prev => prev.map(r => {
-      if (r.roomNumber === order.roomNumber) {
-        return {
-          ...r,
-          laundryCharges: r.laundryCharges + order.totalPrice
-        };
+      batch.set(doc(db, 'tenants', tenantId, 'laundryOrders', newId), finalOrder);
+
+      // Automatically route to Room Bill
+      const roomMatch = rooms.find(r => r.roomNumber === order.roomNumber);
+      if (roomMatch) {
+        batch.update(doc(db, 'tenants', tenantId, 'rooms', roomMatch.id), {
+          laundryCharges: roomMatch.laundryCharges + order.totalPrice
+        });
       }
-      return r;
-    }));
 
-    addAudit('Laundry Post', `Created laundry ticket ${orderNo} (₹${order.totalPrice}) and added to Room ${order.roomNumber}`);
-    
-    // Notify room supply use
-    const detergent = inventory.find(i => i.name.toLowerCase().includes('detergent'));
-    if (detergent) {
-      updateStockLevel(detergent.id, 0.2 * order.items.reduce((acc, it) => acc + it.quantity, 0), 'out'); // simulate laundry detergent use
+      await batch.commit();
+
+      await addAudit('Laundry Post', `Created laundry ticket ${orderNo} (₹${order.totalPrice}) and added to Room ${order.roomNumber}`);
+      
+      // Notify room supply use
+      const detergent = inventory.find(i => i.name.toLowerCase().includes('detergent'));
+      if (detergent) {
+        const detergentUsage = 0.2 * order.items.reduce((acc, it) => acc + it.quantity, 0);
+        await updateStockLevel(detergent.id, detergentUsage, 'out');
+      }
+    } catch (e) {
+      console.error(e);
     }
   };
 
-  const updateLaundryStatus = (id: string, status: 'Pending' | 'Delivered' | 'Completed') => {
-    setLaundryOrders(prev => prev.map(o => o.id === id ? { ...o, status } : o));
+  const updateLaundryStatus = async (id: string, status: 'Pending' | 'Delivered' | 'Completed') => {
+    if (!tenantId) return;
     const order = laundryOrders.find(o => o.id === id);
-    addAudit('Laundry Update', `Laundry order ${order?.orderNumber} status changed to ${status}`);
+    if (!order) return;
+
+    try {
+      await updateDoc(doc(db, 'tenants', tenantId, 'laundryOrders', id), { status });
+      await addAudit('Laundry Update', `Laundry order ${order.orderNumber} status changed to ${status}`);
+    } catch (e) {
+      console.error(e);
+    }
   };
 
   // PARTY HALL BOOKING
-  const addHallBooking = (booking: Omit<HallBooking, 'id' | 'bookingNumber' | 'status' | 'totalPrice'>) => {
+  const addHallBooking = async (booking: Omit<HallBooking, 'id' | 'bookingNumber' | 'status' | 'totalPrice'>) => {
+    if (!tenantId) return;
     const newId = 'h_' + Date.now();
     const bookingNo = 'HAL-' + Math.floor(1000 + Math.random() * 9000);
 
@@ -809,92 +899,132 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       totalPrice: total
     };
 
-    setHallBookings(prev => [finalBooking, ...prev]);
+    try {
+      const batch = writeBatch(db);
 
-    // If Room number is specified and active, link the Rent/Charges
-    if (booking.roomNumber) {
-      setRooms(prev => prev.map(r => {
-        if (r.roomNumber === booking.roomNumber) {
-          // Link non-advance total to room
-          return {
-            ...r,
-            hallCharges: r.hallCharges + total
-          };
+      batch.set(doc(db, 'tenants', tenantId, 'hallBookings', newId), finalBooking);
+
+      // If Room number is specified and active, link the Rent/Charges
+      if (booking.roomNumber) {
+        const roomMatch = rooms.find(r => r.roomNumber === booking.roomNumber);
+        if (roomMatch) {
+          batch.update(doc(db, 'tenants', tenantId, 'rooms', roomMatch.id), {
+            hallCharges: roomMatch.hallCharges + total
+          });
         }
-        return r;
-      }));
-      addAudit('Hall Link to Room', `Linked Hall Booking ${bookingNo} (₹${total}) to Room ${booking.roomNumber}`);
-    } else {
-      addAudit('Hall Booking', `Created Hall Booking ${bookingNo} for ${booking.guestName}`);
+      }
+
+      await batch.commit();
+
+      if (booking.roomNumber) {
+        await addAudit('Hall Link to Room', `Linked Hall Booking ${bookingNo} (₹${total}) to Room ${booking.roomNumber}`);
+      } else {
+        await addAudit('Hall Booking', `Created Hall Booking ${bookingNo} for ${booking.guestName}`);
+      }
+    } catch (e) {
+      console.error(e);
     }
   };
 
-  const cancelHallBooking = (id: string) => {
-    setHallBookings(prev => prev.map(h => h.id === id ? { ...h, status: 'Cancelled' as const } : h));
+  const cancelHallBooking = async (id: string) => {
+    if (!tenantId) return;
     const booking = hallBookings.find(h => h.id === id);
-    addAudit('Cancel Hall Booking', `Cancelled hall booking ${booking?.bookingNumber}`);
+    if (!booking) return;
+
+    try {
+      await updateDoc(doc(db, 'tenants', tenantId, 'hallBookings', id), { status: 'Cancelled' });
+      await addAudit('Cancel Hall Booking', `Cancelled hall booking ${booking.bookingNumber}`);
+    } catch (e) {
+      console.error(e);
+    }
   };
 
   // INVENTORY ITEMS
-  const addInventoryItem = (item: Omit<InventoryItem, 'id'>) => {
+  const addInventoryItem = async (item: Omit<InventoryItem, 'id'>) => {
+    if (!tenantId) return;
+    const id = 'i_' + Date.now();
     const newItem: InventoryItem = {
       ...item,
-      id: 'i_' + Date.now()
+      id
     };
-    setInventory(prev => [...prev, newItem]);
-    addAudit('Add Stock Item', `Created inventory track for ${item.name}`);
+    try {
+      await setDoc(doc(db, 'tenants', tenantId, 'inventory', id), newItem);
+      await addAudit('Add Stock Item', `Created inventory track for ${item.name}`);
+    } catch (e) {
+      console.error(e);
+    }
   };
 
-  const recordPurchase = (purchase: Omit<PurchaseLog, 'id' | 'date'>) => {
+  const recordPurchase = async (purchase: Omit<PurchaseLog, 'id' | 'date'>) => {
+    if (!tenantId) return;
+    const id = 'p_' + Date.now();
     const newPurchase: PurchaseLog = {
       ...purchase,
-      id: 'p_' + Date.now(),
+      id,
       date: new Date().toISOString().split('T')[0]
     };
-    
-    setPurchaseLogs(prev => [newPurchase, ...prev]);
 
-    // Update stock levels
-    setInventory(prev => prev.map(item => {
-      if (item.name.toLowerCase() === purchase.itemName.toLowerCase()) {
-        const newStock = item.stock + purchase.quantity;
+    try {
+      const batch = writeBatch(db);
+
+      batch.set(doc(db, 'tenants', tenantId, 'purchaseLogs', id), newPurchase);
+
+      // Update stock levels
+      const itemMatch = inventory.find(item => item.name.toLowerCase() === purchase.itemName.toLowerCase());
+      if (itemMatch) {
+        const newStock = itemMatch.stock + purchase.quantity;
         
+        batch.update(doc(db, 'tenants', tenantId, 'inventory', itemMatch.id), { stock: newStock });
+
         // Remove low stock alert notification if stock rose above threshold
-        if (newStock >= item.minStock) {
-          setNotifications(prevNotif => prevNotif.filter(n => !n.message.includes(item.name)));
+        if (newStock >= itemMatch.minStock) {
+          const matchedNotifs = notifications.filter(n => n.message.includes(itemMatch.name));
+          matchedNotifs.forEach(n => {
+            batch.delete(doc(db, 'tenants', tenantId, 'notifications', n.id));
+          });
         }
-
-        return { ...item, stock: newStock };
       }
-      return item;
-    }));
 
-    addAudit('Stock Purchase', `Stock In: ${purchase.quantity} ${purchase.unit} of ${purchase.itemName} from ${purchase.supplier}`);
+      await batch.commit();
+      await addAudit('Stock Purchase', `Stock In: ${purchase.quantity} ${purchase.unit} of ${purchase.itemName} from ${purchase.supplier}`);
+    } catch (e) {
+      console.error(e);
+    }
   };
 
-  const updateStockLevel = (itemId: string, amount: number, direction: 'in' | 'out') => {
-    setInventory(prev => prev.map(item => {
-      if (item.id === itemId) {
-        const change = direction === 'in' ? amount : -amount;
-        const newStock = Math.max(0, item.stock + change);
+  const updateStockLevel = async (itemId: string, amount: number, direction: 'in' | 'out') => {
+    if (!tenantId) return;
+    const item = inventory.find(i => i.id === itemId);
+    if (!item) return;
 
-        // Check low stock condition
-        if (newStock < item.minStock && item.stock >= item.minStock) {
-          // Trigger low stock notification
-          const newNotif: AppNotification = {
-            id: 'n_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5),
-            type: 'stock',
-            message: `Low Stock Alert: ${item.name} is below threshold (${newStock.toFixed(1)}${item.unit} remaining, min ${item.minStock}${item.unit})`,
-            timestamp: new Date().toLocaleString(),
-            read: false
-          };
-          setNotifications(prevN => [newNotif, ...prevN]);
-        }
+    const change = direction === 'in' ? amount : -amount;
+    const newStock = Math.max(0, item.stock + change);
 
-        return { ...item, stock: parseFloat(newStock.toFixed(1)) };
+    try {
+      const batch = writeBatch(db);
+
+      batch.update(doc(db, 'tenants', tenantId, 'inventory', itemId), {
+        stock: parseFloat(newStock.toFixed(1))
+      });
+
+      // Check low stock condition
+      if (newStock < item.minStock && item.stock >= item.minStock) {
+        // Trigger low stock notification
+        const notifId = 'n_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5);
+        const newNotif: AppNotification = {
+          id: notifId,
+          type: 'stock',
+          message: `Low Stock Alert: ${item.name} is below threshold (${newStock.toFixed(1)}${item.unit} remaining, min ${item.minStock}${item.unit})`,
+          timestamp: new Date().toLocaleString(),
+          read: false
+        };
+        batch.set(doc(db, 'tenants', tenantId, 'notifications', notifId), newNotif);
       }
-      return item;
-    }));
+
+      await batch.commit();
+    } catch (e) {
+      console.error(e);
+    }
   };
 
   // UNIFIED BILLING CALCULATIONS
@@ -915,7 +1045,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const roomRentTotal = stayDuration * room.price;
     const subtotal = roomRentTotal + room.restaurantCharges + room.barCharges + room.laundryCharges + room.hallCharges + room.otherCharges;
     
-    // Average overall tax rate for room billing (or detailed itemized tax)
     const taxRate = settings.taxRate;
     const taxAmount = parseFloat(((subtotal * taxRate) / 100).toFixed(2));
     const grandTotal = subtotal + taxAmount;
@@ -935,15 +1064,148 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       subtotal,
       taxRate,
       taxAmount,
-      discount: 0, // default starts at 0, reception applies custom discounts
+      discount: 0,
       advancePaid: room.advancePaid || 0,
       grandTotal,
       pendingAmount
     };
   };
 
-  const clearNotification = (id: string) => {
-    setNotifications(prev => prev.map(n => n.id === id ? { ...n, read: true } : n));
+  const clearNotification = async (id: string) => {
+    if (!tenantId) return;
+    try {
+      await updateDoc(doc(db, 'tenants', tenantId, 'notifications', id), { read: true });
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const addMenuItem = async (item: MenuItem) => {
+    if (!tenantId) return;
+    try {
+      await setDoc(doc(db, 'tenants', tenantId, 'menuItems', item.id), item);
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const updateSettings = async (newSettings: HotelSettings) => {
+    if (!tenantId) return;
+    try {
+      await setDoc(doc(db, 'tenants', tenantId, 'settings', 'hotel'), newSettings);
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const addRoom = async (room: Omit<Room, 'status' | 'restaurantCharges' | 'barCharges' | 'laundryCharges' | 'hallCharges' | 'otherCharges'>) => {
+    if (!tenantId) return;
+    const newRoom: Room = {
+      ...room,
+      status: 'Available',
+      restaurantCharges: 0,
+      barCharges: 0,
+      laundryCharges: 0,
+      hallCharges: 0,
+      otherCharges: 0
+    };
+    try {
+      await setDoc(doc(db, 'tenants', tenantId, 'rooms', newRoom.id), newRoom);
+      await addAudit('Create Room', `Added new room ${room.roomNumber} (${room.category}) at ₹${room.price}`);
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const deleteRoom = async (roomId: string) => {
+    if (!tenantId) return;
+    const room = rooms.find(r => r.id === roomId);
+    if (!room) return;
+    try {
+      await deleteDoc(doc(db, 'tenants', tenantId, 'rooms', roomId));
+      await addAudit('Delete Room', `Deleted room ${room.roomNumber} (${room.category})`);
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const resetTenantData = async () => {
+    if (!tenantId) return;
+    try {
+      const batch = writeBatch(db);
+
+      // 1. Delete all pre-bookings
+      preBookings.forEach(pb => {
+        batch.delete(doc(db, 'tenants', tenantId, 'preBookings', pb.id));
+      });
+
+      // 2. Delete all menu items
+      menuItems.forEach(item => {
+        batch.delete(doc(db, 'tenants', tenantId, 'menuItems', item.id));
+      });
+
+      // 3. Delete all orders
+      orders.forEach(o => {
+        batch.delete(doc(db, 'tenants', tenantId, 'orders', o.id));
+      });
+
+      // 4. Delete all laundry orders
+      laundryOrders.forEach(lo => {
+        batch.delete(doc(db, 'tenants', tenantId, 'laundryOrders', lo.id));
+      });
+
+      // 5. Delete all hall bookings
+      hallBookings.forEach(hb => {
+        batch.delete(doc(db, 'tenants', tenantId, 'hallBookings', hb.id));
+      });
+
+      // 6. Delete all inventory
+      inventory.forEach(inv => {
+        batch.delete(doc(db, 'tenants', tenantId, 'inventory', inv.id));
+      });
+
+      // 7. Delete all purchase logs
+      purchaseLogs.forEach(p => {
+        batch.delete(doc(db, 'tenants', tenantId, 'purchaseLogs', p.id));
+      });
+
+      // 8. Delete all audit logs
+      auditLogs.forEach(a => {
+        batch.delete(doc(db, 'tenants', tenantId, 'auditLogs', a.id));
+      });
+
+      // 9. Delete all notifications
+      notifications.forEach(n => {
+        batch.delete(doc(db, 'tenants', tenantId, 'notifications', n.id));
+      });
+
+      // 10. Delete all current rooms and re-seed clean room templates
+      rooms.forEach(r => {
+        batch.delete(doc(db, 'tenants', tenantId, 'rooms', r.id));
+      });
+      defaultRooms.forEach(r => {
+        batch.set(doc(db, 'tenants', tenantId, 'rooms', r.id), r);
+      });
+
+      await batch.commit();
+
+      // Write a fresh audit log entry
+      const logId = 'a_reset_' + Date.now();
+      const resetLog: AuditLog = {
+        id: logId,
+        username: 'System',
+        role: 'admin',
+        action: 'Database Reset',
+        details: 'All transactional records have been wiped and rooms reset to standard vacant list.',
+        timestamp: new Date().toLocaleString()
+      };
+      await setDoc(doc(db, 'tenants', tenantId, 'auditLogs', logId), resetLog);
+
+      alert('Database successfully reset to a fresh state!');
+    } catch (e) {
+      console.error(e);
+      alert('Failed to reset database: ' + (e as Error).message);
+    }
   };
 
   return (
@@ -963,6 +1225,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       auditLogs,
       notifications,
       settings,
+
+      // Auth values
+      user,
+      loadingAuth,
+      tenantId,
+      logout,
       
       checkInRoom,
       checkOutRoom,
@@ -987,7 +1255,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       
       getBillSummary,
       addAudit,
-      clearNotification
+      clearNotification,
+
+      addMenuItem,
+      updateSettings,
+      addRoom,
+      deleteRoom,
+      resetTenantData
     }}>
       {children}
     </AppContext.Provider>

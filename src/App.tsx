@@ -13,9 +13,10 @@ import { UnifiedBillingView } from './views/UnifiedBillingView';
 import { ReportsView } from './views/ReportsView';
 import { SettingsView } from './views/SettingsView';
 import { AuditLogView } from './views/AuditLogView';
+import { Auth } from './components/Auth';
 
 const AppContent: React.FC = () => {
-  const { userRole } = useApp();
+  const { userRole, user, loadingAuth } = useApp();
   const [currentTab, setCurrentTab] = useState('dashboard');
   const [selectedRoomForBilling, setSelectedRoomForBilling] = useState('');
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
@@ -41,6 +42,19 @@ const AppContent: React.FC = () => {
       setCurrentTab(allowed[0] || 'dashboard');
     }
   }, [userRole, currentTab]);
+
+  if (loadingAuth) {
+    return (
+      <div className="h-screen w-screen flex flex-col items-center justify-center bg-slate-950 text-slate-200">
+        <div className="animate-spin rounded-full h-10 w-10 border-4 border-indigo-500/20 border-t-indigo-500 mb-4" />
+        <p className="text-xs font-semibold tracking-wider text-slate-400 uppercase">Loading HotelVista console...</p>
+      </div>
+    );
+  }
+
+  if (!user) {
+    return <Auth />;
+  }
 
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-slate-50 dark:bg-slate-950 transition-colors duration-300">

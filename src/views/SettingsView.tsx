@@ -1,9 +1,9 @@
 import React, { useState } from 'react';
-import { useApp, MenuItem } from '../context/AppContext';
-import { Settings, Plus, ToggleLeft, ToggleRight, Save, UtensilsCrossed } from 'lucide-react';
+import { useApp, MenuItem, HotelSettings, RoomCategory } from '../context/AppContext';
+import { Settings, Plus, ToggleLeft, ToggleRight, Save, UtensilsCrossed, Trash2, AlertTriangle } from 'lucide-react';
 
 export const SettingsView: React.FC = () => {
-  const { settings, menuItems, addInventoryItem, addAudit } = useApp();
+  const { settings, menuItems, addInventoryItem, addAudit, addMenuItem, updateSettings, rooms, addRoom, deleteRoom, resetTenantData } = useApp();
 
   // Hotel settings local copy
   const [hotelName, setHotelName] = useState(settings.name);
@@ -21,7 +21,13 @@ export const SettingsView: React.FC = () => {
   const [newMenuCategory, setNewMenuCategory] = useState('Breakfast');
   const [isBarItem, setIsBarItem] = useState(false);
 
-  const [activeSettingsTab, setActiveSettingsTab] = useState<'hotel' | 'menu'>('hotel');
+  const [activeSettingsTab, setActiveSettingsTab] = useState<'hotel' | 'menu' | 'rooms'>('hotel');
+
+  // New Room States
+  const [newRoomNumber, setNewRoomNumber] = useState('');
+  const [newRoomFloor, setNewRoomFloor] = useState(1);
+  const [newRoomCategory, setNewRoomCategory] = useState<RoomCategory>('Standard');
+  const [newRoomPrice, setNewRoomPrice] = useState(1500);
 
   const foodCategories = ['Breakfast', 'Lunch', 'Dinner', 'Beverages', 'Desserts'];
   const barCategories = ['Beer', 'Whisky', 'Rum', 'Vodka', 'Wine', 'Cocktails', 'Snacks'];
@@ -29,18 +35,18 @@ export const SettingsView: React.FC = () => {
   const handleHotelSave = (e: React.FormEvent) => {
     e.preventDefault();
     
-    // Save to context settings
-    settings.name = hotelName;
-    settings.address = address;
-    settings.phone = phone;
-    settings.email = email;
-    settings.gstNumber = gstNumber;
-    settings.taxRate = taxRate;
-    settings.barTaxRate = barTaxRate;
-    settings.invoicePrefix = invoicePrefix;
+    const updatedSettings: HotelSettings = {
+      name: hotelName,
+      address,
+      phone,
+      email,
+      gstNumber,
+      taxRate,
+      barTaxRate,
+      invoicePrefix
+    };
     
-    // Save settings to LocalStorage manually to persist
-    localStorage.setItem('hv_settings', JSON.stringify(settings));
+    updateSettings(updatedSettings);
 
     addAudit('Save Settings', 'Updated hotel metadata details and general taxation structures.');
     alert('Hotel settings updated successfully!');
@@ -59,8 +65,7 @@ export const SettingsView: React.FC = () => {
       isAvailable: true
     };
 
-    menuItems.push(newItem);
-    localStorage.setItem('hv_menu_items', JSON.stringify(menuItems));
+    addMenuItem(newItem);
 
     // Automatically seed inventory tracking if it's food or liquor
     addInventoryItem({
@@ -77,6 +82,28 @@ export const SettingsView: React.FC = () => {
     // Reset Form
     setNewMenuName('');
     setNewMenuPrice(0);
+  };
+
+  const handleAddRoomSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newRoomNumber || newRoomPrice <= 0) return;
+
+    const exists = rooms.some(r => r.roomNumber === newRoomNumber);
+    if (exists) {
+      alert(`Room number ${newRoomNumber} already exists!`);
+      return;
+    }
+
+    await addRoom({
+      id: 'r_' + newRoomNumber + '_' + Date.now(),
+      roomNumber: newRoomNumber,
+      category: newRoomCategory,
+      floor: newRoomFloor,
+      price: newRoomPrice
+    });
+
+    alert(`Room ${newRoomNumber} created successfully!`);
+    setNewRoomNumber('');
   };
 
   return (
@@ -112,6 +139,17 @@ export const SettingsView: React.FC = () => {
             }`}
           >
             Manage Restaurant & Bar Menu List
+          </button>
+
+          <button
+            onClick={() => setActiveSettingsTab('rooms')}
+            className={`w-full px-4 py-2.5 rounded-xl text-left text-xs font-semibold transition-all ${
+              activeSettingsTab === 'rooms' 
+                ? 'bg-indigo-50 text-indigo-600 dark:bg-indigo-950/20 dark:text-indigo-400 font-bold' 
+                : 'text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-800/40'
+            }`}
+          >
+            Manage Rooms List
           </button>
         </div>
       </div>
@@ -224,6 +262,32 @@ export const SettingsView: React.FC = () => {
                 <Save className="w-4 h-4" /> Save Metadata Settings
               </button>
             </form>
+
+            {/* Danger Zone */}
+            <div className="mt-8 p-5 border border-rose-200/60 dark:border-rose-950/40 rounded-2xl bg-rose-50/10 dark:bg-rose-950/5 space-y-4">
+              <h4 className="text-xs font-bold uppercase tracking-wider text-rose-500 flex items-center gap-1.5 font-semibold">
+                <AlertTriangle className="w-4 h-4 text-rose-500 animate-pulse" /> Danger Zone
+              </h4>
+              <p className="text-[11px] text-slate-550 dark:text-slate-400 leading-relaxed">
+                Clearing all records will permanently wipe all guest logs, booking records, menu item catalogs, sales logs, laundry details, stock levels, and audit logs. Your rooms will be reset to a clean, vacant list. This action cannot be undone.
+              </p>
+              <button
+                type="button"
+                onClick={async () => {
+                  if (confirm("WARNING: Are you sure you want to WIPE all records? This will delete all history and reset rooms to vacant. This cannot be undone!")) {
+                    const confirmText = prompt("Type 'RESET' to confirm database deletion:");
+                    if (confirmText === 'RESET') {
+                      await resetTenantData();
+                    } else {
+                      alert('Reset aborted.');
+                    }
+                  }
+                }}
+                className="py-2.5 px-4 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-xl shadow-md transition-colors text-xs flex items-center gap-1.5 active:scale-[0.99]"
+              >
+                <Trash2 className="w-4 h-4" /> Reset Database to Fresh State
+              </button>
+            </div>
           </div>
         )}
 
@@ -319,6 +383,113 @@ export const SettingsView: React.FC = () => {
               </div>
             </div>
 
+          </div>
+        )}
+
+        {/* Rooms Manager */}
+        {activeSettingsTab === 'rooms' && (
+          <div className="space-y-5">
+            <h3 className="text-xs font-bold uppercase tracking-wider text-slate-455 border-b pb-2 border-slate-100 dark:border-slate-800">
+              Customize Rooms Inventory & Pricing
+            </h3>
+
+            {/* Form to add Room */}
+            <form onSubmit={handleAddRoomSubmit} className="p-4 bg-slate-50 dark:bg-slate-950 border border-slate-200/50 dark:border-slate-850 rounded-xl space-y-3.5 text-xs">
+              <span className="font-bold text-[10px] uppercase text-indigo-500 block">Create New Hotel Room</span>
+              
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="font-bold text-slate-500">Room Number *</label>
+                  <input
+                    type="text"
+                    required
+                    value={newRoomNumber}
+                    onChange={e => setNewRoomNumber(e.target.value)}
+                    className="w-full p-2 border dark:border-slate-800 dark:bg-slate-900 rounded-lg font-bold"
+                    placeholder="e.g. 107"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="font-bold text-slate-500">Floor Number *</label>
+                  <input
+                    type="number"
+                    required
+                    min={1}
+                    value={newRoomFloor}
+                    onChange={e => setNewRoomFloor(Number(e.target.value))}
+                    className="w-full p-2 border dark:border-slate-800 dark:bg-slate-900 rounded-lg font-semibold"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="font-bold text-slate-500">Room Category *</label>
+                  <select
+                    value={newRoomCategory}
+                    onChange={e => setNewRoomCategory(e.target.value as RoomCategory)}
+                    className="w-full p-2 border dark:border-slate-800 dark:bg-slate-900 rounded-lg font-semibold"
+                  >
+                    {['Standard', 'Semi Premium', 'Premium', 'Suite', 'Family Suite', 'Dormitory'].map(cat => (
+                      <option key={cat} value={cat}>{cat}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="space-y-1">
+                  <label className="font-bold text-slate-500">Room Rent Price (₹/day) *</label>
+                  <input
+                    type="number"
+                    required
+                    min={100}
+                    value={newRoomPrice}
+                    onChange={e => setNewRoomPrice(Number(e.target.value))}
+                    className="w-full p-2 border dark:border-slate-800 dark:bg-slate-900 rounded-lg font-mono font-bold"
+                  />
+                </div>
+              </div>
+
+              <button
+                type="submit"
+                className="w-full py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl shadow-sm transition-colors mt-2"
+              >
+                Create Room Entry
+              </button>
+            </form>
+
+            {/* Rooms List preview with Delete */}
+            <div className="space-y-3">
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Existing Rooms Catalog ({rooms.length})</span>
+              <div className="max-h-[300px] overflow-y-auto border border-slate-100 dark:border-slate-800/80 rounded-xl divide-y divide-slate-100 dark:divide-slate-800/50 bg-white dark:bg-slate-900">
+                {rooms.map(room => (
+                  <div key={room.id} className="flex justify-between items-center p-3 text-xs">
+                    <div>
+                      <p className="font-bold text-slate-850 dark:text-slate-150 flex items-center gap-2">
+                        <span>Room {room.roomNumber}</span>
+                        <span className="text-[9px] px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-500 font-semibold">{room.category}</span>
+                      </p>
+                      <span className="text-[9px] text-slate-450 font-semibold">Floor {room.floor} • ₹{room.price}/day • Status: <span className="font-bold text-emerald-500">{room.status}</span></span>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <button
+                        onClick={async () => {
+                          if (room.status !== 'Available') {
+                            alert('Cannot delete an active, occupied or reserved room!');
+                            return;
+                          }
+                          if (confirm(`Are you sure you want to delete Room ${room.roomNumber}?`)) {
+                            await deleteRoom(room.id);
+                          }
+                        }}
+                        className="p-1.5 text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/20 rounded-lg transition-colors"
+                        title="Delete Room"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
           </div>
         )}
 
