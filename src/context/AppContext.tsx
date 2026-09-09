@@ -141,6 +141,29 @@ export interface PurchaseLog {
   date: string;
 }
 
+export interface StockAdjustmentLog {
+  id: string;
+  itemId: string;
+  itemName: string;
+  category: string;
+  amount: number;
+  unit: string;
+  direction: 'in' | 'out';
+  description: string;
+  date: string;
+}
+
+export interface ClientUserAccount {
+  id: string;
+  name: string;
+  email: string;
+  password: string;
+  role: UserRole;
+  tenantName: string;
+  status: 'Active' | 'Inactive';
+  createdAt: string;
+}
+
 export interface AuditLog {
   id: string;
   username: string;
@@ -209,6 +232,9 @@ interface AppContextType {
   hallBookings: HallBooking[];
   inventory: InventoryItem[];
   purchaseLogs: PurchaseLog[];
+  stockAdjustmentLogs: StockAdjustmentLog[];
+  userAccounts: ClientUserAccount[];
+  currentUser: ClientUserAccount | null;
   auditLogs: AuditLog[];
   notifications: AppNotification[];
   settings: HotelSettings;
@@ -233,11 +259,15 @@ interface AppContextType {
   
   addInventoryItem: (item: Omit<InventoryItem, 'id'>) => void;
   recordPurchase: (purchase: Omit<PurchaseLog, 'id' | 'date'>) => void;
-  updateStockLevel: (itemId: string, amount: number, direction: 'in' | 'out') => void;
+  updateStockLevel: (itemId: string, amount: number, direction: 'in' | 'out', category?: string, description?: string) => void;
   
   getBillSummary: (roomNumber: string) => BillSummary | null;
   addAudit: (action: string, details: string, oldValue?: string, newValue?: string) => void;
   clearNotification: (id: string) => void;
+  addUserAccount: (user: Omit<ClientUserAccount, 'id' | 'createdAt'>) => void;
+  deleteUserAccount: (id: string) => void;
+  loginUser: (email: string, password: string) => { success: boolean; error?: string };
+  logoutUser: () => void;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -872,9 +902,37 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     addAudit('Stock Purchase', `Stock In: ${purchase.quantity} ${purchase.unit} of ${purchase.itemName} from ${purchase.supplier}`);
   };
 
-  const updateStockLevel = (itemId: string, amount: number, direction: 'in' | 'out') => {
+  const [stockAdjustmentLogs, setStockAdjustmentLogs] = useState<StockAdjustmentLog[]>([
+    {
+      id: 'adj_1',
+      itemId: 'inv_1',
+      itemName: 'Basmati Rice 25kg Bag',
+      category: 'Kitchen',
+      amount: 2,
+      unit: 'kg',
+      direction: 'out',
+      description: 'Kitchen dinner preparation usage',
+      date: new Date().toISOString().split('T')[0] + ' 10:15'
+    },
+    {
+      id: 'adj_2',
+      itemId: 'inv_2',
+      itemName: 'Kingfisher Premium Beer 650ml',
+      category: 'Liquor',
+      amount: 6,
+      unit: 'bottle',
+      direction: 'in',
+      description: 'Bar counter stock replenishment',
+      date: new Date().toISOString().split('T')[0] + ' 11:30'
+    }
+  ]);
+
+  const updateStockLevel = (itemId: string, amount: number, direction: 'in' | 'out', category?: string, description?: string) => {
+    let adjustedItem: InventoryItem | undefined;
+
     setInventory(prev => prev.map(item => {
       if (item.id === itemId) {
+        adjustedItem = item;
         const change = direction === 'in' ? amount : -amount;
         const newStock = Math.max(0, item.stock + change);
 
@@ -895,6 +953,131 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
       return item;
     }));
+
+    if (adjustedItem) {
+      const itemCat = category || adjustedItem.category;
+      const desc = description || (direction === 'in' ? 'Manual Stock In adjustment' : 'Manual Stock Out adjustment');
+      const newLog: StockAdjustmentLog = {
+        id: 'adj_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4),
+        itemId,
+        itemName: adjustedItem.name,
+        category: itemCat,
+        amount,
+        unit: adjustedItem.unit,
+        direction,
+        description: desc,
+        date: new Date().toISOString().split('T')[0] + ' ' + new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      };
+      setStockAdjustmentLogs(prev => [newLog, ...prev]);
+
+      addAudit('Stock Adjustment', `Manual ${direction === 'in' ? 'Stock-In' : 'Stock-Out'} of ${amount} ${adjustedItem.unit} for ${adjustedItem.name} (${itemCat}) - Note: ${desc}`);
+    }
+  };
+
+  const [userAccounts, setUserAccounts] = useState<ClientUserAccount[]>(() => {
+    const saved = localStorage.getItem('hv_user_accounts');
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch (e) {}
+    }
+    return [
+      {
+        id: 'u_merridien',
+        name: 'Le Merridien Admin',
+        email: 'merridien@hotel.com',
+        password: '123456',
+        role: 'admin',
+        tenantName: 'Hotel Le Merridien',
+        status: 'Active',
+        createdAt: new Date().toISOString().split('T')[0]
+      },
+      {
+        id: 'u_admin',
+        name: 'HotelVista System Admin',
+        email: 'admin@hotelvista.com',
+        password: 'admin123',
+        role: 'admin',
+        tenantName: 'HotelVista Grand',
+        status: 'Active',
+        createdAt: '2026-01-01'
+      },
+      {
+        id: 'u_reception',
+        name: 'Front Desk Reception',
+        email: 'reception@hotelvista.com',
+        password: 'reception123',
+        role: 'reception',
+        tenantName: 'HotelVista Grand',
+        status: 'Active',
+        createdAt: '2026-01-01'
+      }
+    ];
+  });
+
+  const addUserAccount = (user: Omit<ClientUserAccount, 'id' | 'createdAt'>) => {
+    const newUser: ClientUserAccount = {
+      ...user,
+      id: 'u_' + Date.now(),
+      createdAt: new Date().toISOString().split('T')[0]
+    };
+    const updated = [newUser, ...userAccounts];
+    setUserAccounts(updated);
+    localStorage.setItem('hv_user_accounts', JSON.stringify(updated));
+    addAudit('User Account Created', `Created client account ${user.email} (${user.role}) for ${user.tenantName}`);
+  };
+
+  const deleteUserAccount = (id: string) => {
+    const updated = userAccounts.filter(u => u.id !== id);
+    setUserAccounts(updated);
+    localStorage.setItem('hv_user_accounts', JSON.stringify(updated));
+  };
+
+  const [currentUser, setCurrentUser] = useState<ClientUserAccount | null>(() => {
+    const saved = localStorage.getItem('hv_current_user');
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch (e) {}
+    }
+    return {
+      id: 'u_merridien',
+      name: 'Le Merridien Admin',
+      email: 'merridien@hotel.com',
+      password: '123456',
+      role: 'admin',
+      tenantName: 'Hotel Le Merridien',
+      status: 'Active',
+      createdAt: '2026-01-01'
+    };
+  });
+
+  const loginUser = (emailInput: string, passwordInput: string) => {
+    const cleanEmail = emailInput.trim().toLowerCase();
+    const cleanPassword = passwordInput.trim();
+
+    const matched = userAccounts.find(u => 
+      u.email.toLowerCase() === cleanEmail && u.password === cleanPassword
+    );
+
+    if (matched) {
+      setCurrentUser(matched);
+      setUserRole(matched.role);
+      localStorage.setItem('hv_current_user', JSON.stringify(matched));
+      localStorage.setItem('hv_user_role', matched.role);
+      addAudit('User Login', `User ${matched.email} (${matched.name}) logged in successfully as ${matched.role}`);
+      return { success: true };
+    }
+
+    return { success: false, error: 'Invalid Email ID or Password. Please check your credentials.' };
+  };
+
+  const logoutUser = () => {
+    if (currentUser) {
+      addAudit('User Logout', `User ${currentUser.email} logged out.`);
+    }
+    setCurrentUser(null);
+    localStorage.removeItem('hv_current_user');
   };
 
   // UNIFIED BILLING CALCULATIONS
@@ -960,6 +1143,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       hallBookings,
       inventory,
       purchaseLogs,
+      stockAdjustmentLogs,
+      userAccounts,
       auditLogs,
       notifications,
       settings,
@@ -987,7 +1172,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       
       getBillSummary,
       addAudit,
-      clearNotification
+      clearNotification,
+      addUserAccount,
+      deleteUserAccount,
+      currentUser,
+      loginUser,
+      logoutUser
     }}>
       {children}
     </AppContext.Provider>

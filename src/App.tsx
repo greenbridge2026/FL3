@@ -16,9 +16,39 @@ import { AuditLogView } from './views/AuditLogView';
 
 const AppContent: React.FC = () => {
   const { userRole } = useApp();
-  const [currentTab, setCurrentTab] = useState('dashboard');
+  
+  // Read initial tab from location hash or localStorage to persist on reload
+  const [currentTab, setCurrentTab] = useState(() => {
+    const hash = window.location.hash.replace('#', '');
+    if (hash) return hash;
+    const saved = localStorage.getItem('hotelvista_active_tab');
+    return saved || 'dashboard';
+  });
+
   const [selectedRoomForBilling, setSelectedRoomForBilling] = useState('');
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+
+  // Sync currentTab with localStorage and URL hash
+  useEffect(() => {
+    if (currentTab) {
+      localStorage.setItem('hotelvista_active_tab', currentTab);
+      if (window.location.hash !== `#${currentTab}`) {
+        window.location.hash = currentTab;
+      }
+    }
+  }, [currentTab]);
+
+  // Listen for browser back/forward and hash changes
+  useEffect(() => {
+    const handleHashChange = () => {
+      const hash = window.location.hash.replace('#', '');
+      if (hash && hash !== currentTab) {
+        setCurrentTab(hash);
+      }
+    };
+    window.addEventListener('hashchange', handleHashChange);
+    return () => window.removeEventListener('hashchange', handleHashChange);
+  }, [currentTab]);
 
   // Role Tab Authorization Checks & Auto-Redirects
   useEffect(() => {
