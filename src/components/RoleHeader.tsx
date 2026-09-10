@@ -36,6 +36,13 @@ export const RoleHeader: React.FC<RoleHeaderProps> = ({ onToggleSidebar }) => {
     { value: 'store_manager', label: 'Store Manager', icon: '📦', desc: 'Stock inventory, Purchase logging' }
   ];
 
+  const availableRoles = roles.filter(r => {
+    if (r.value === 'super_admin') {
+      return currentUser?.role === 'super_admin';
+    }
+    return true;
+  });
+
   const currentRoleInfo = roles.find(r => r.value === userRole);
 
   return (
@@ -99,7 +106,7 @@ export const RoleHeader: React.FC<RoleHeaderProps> = ({ onToggleSidebar }) => {
                     <p className="text-[10px] text-slate-500">Test different views and access control levels.</p>
                   </div>
                   <div className="max-h-[300px] overflow-y-auto px-1 py-1">
-                    {roles.map(r => (
+                    {availableRoles.map(r => (
                       <button
                         key={r.value}
                         onClick={() => {

@@ -48,6 +48,7 @@ export const StockView: React.FC = () => {
   const [newItemCategory, setNewItemCategory] = useState<'Liquor' | 'Food' | 'Cleaning' | 'Laundry' | 'Room Supplies' | 'Kitchen' | 'Housekeeping'>('Room Supplies');
   const [newItemMinStock, setNewItemMinStock] = useState(5);
   const [newItemUnit, setNewItemUnit] = useState('pcs');
+  const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
   // Tabs for sub-views (persisted on reload)
   const [activeSubTab, setActiveSubTab] = useState<'ledger' | 'purchases' | 'adjust' | 'reports'>(() => {
@@ -299,20 +300,26 @@ export const StockView: React.FC = () => {
     setAdjustDescription('');
   };
 
-  const handleNewItemTrackSubmit = (e: React.FormEvent) => {
+  const handleNewItemTrackSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newItemName) return;
+    if (!newItemName.trim()) return;
 
-    addInventoryItem({
-      name: newItemName,
+    const itemName = newItemName.trim();
+    await addInventoryItem({
+      name: itemName,
       category: newItemCategory,
       stock: 0,
-      minStock: newItemMinStock,
-      unit: newItemUnit,
+      minStock: Number(newItemMinStock) || 5,
+      unit: newItemUnit.trim() || 'pcs',
       barcode: 'BAR-' + Math.floor(100000 + Math.random() * 900000)
     });
 
+    setSuccessMsg(`✓ Successfully tracked SKU: "${itemName}"`);
+    setTimeout(() => setSuccessMsg(null), 4000);
+
     setNewItemName('');
+    setNewItemMinStock(5);
+    setNewItemUnit('pcs');
   };
 
   const lowStockItems = inventory.filter(item => item.stock < item.minStock);
@@ -320,6 +327,20 @@ export const StockView: React.FC = () => {
   return (
     <div className="space-y-6">
       
+      {/* Success Notification Banner */}
+      {successMsg && (
+        <div className="p-3.5 bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800/50 rounded-2xl flex items-center justify-between text-xs font-bold animate-in fade-in slide-in-from-top-2 duration-200 shadow-sm">
+          <span>{successMsg}</span>
+          <button 
+            type="button" 
+            onClick={() => setSuccessMsg(null)}
+            className="text-emerald-600 hover:text-emerald-800 dark:hover:text-emerald-100 font-bold ml-2"
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
       {/* Low Stock Alerts Banner */}
       {lowStockItems.length > 0 && (
         <div className="p-4 bg-rose-50 dark:bg-rose-950/20 text-rose-800 dark:text-rose-400 border border-rose-200 dark:border-rose-900/30 rounded-2xl flex items-start gap-3 animate-in fade-in duration-200 shadow-sm">

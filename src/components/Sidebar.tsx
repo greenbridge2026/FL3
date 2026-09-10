@@ -23,7 +23,7 @@ interface SidebarProps {
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({ currentTab, setTab, collapsed }) => {
-  const { userRole } = useApp();
+  const { userRole, currentTenant } = useApp();
 
   // Route definitions with icon, roles allowed, and label
   const navItems = [
@@ -42,8 +42,19 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentTab, setTab, collapsed 
     { id: 'audit', label: 'Audit Log', icon: History, roles: ['super_admin', 'admin'] }
   ];
 
-  // Filter navigation items by active role
-  const visibleItems = navItems.filter(item => item.roles.includes(userRole));
+  // Filter navigation items by active role & tenant enabled menus
+  const visibleItems = navItems.filter(item => {
+    // 1. Check user role permission
+    if (!item.roles.includes(userRole)) return false;
+    // 2. Super admin gets all permitted modules
+    if (userRole === 'super_admin') return true;
+    // 3. For client accounts, check if module is enabled for this tenant
+    const enabledMenus = currentTenant?.enabledMenus;
+    if (enabledMenus && Array.isArray(enabledMenus)) {
+      return enabledMenus.includes(item.id);
+    }
+    return true;
+  });
 
   return (
     <aside className={`${collapsed ? 'w-20' : 'w-64'} bg-slate-900 border-r border-slate-800 flex flex-col justify-between text-slate-300 transition-all duration-300`}>
