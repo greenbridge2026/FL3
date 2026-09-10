@@ -9,7 +9,7 @@ import {
   onSnapshot, 
   writeBatch 
 } from 'firebase/firestore';
-import { auth, db, isFirebaseConfigured } from '../firebase';
+import { auth, db, isFirebaseConfigured, cloudDbName } from '../firebase';
 
 // ==========================================
 // TYPES DEFINITIONS
@@ -294,6 +294,10 @@ interface AppContextType {
   notifications: AppNotification[];
   settings: HotelSettings;
 
+  // Live Cloud Database Status
+  cloudDbConnected: boolean;
+  cloudDbName: string;
+
   // Firebase Auth Integrations
   user: User | null;
   loadingAuth: boolean;
@@ -401,6 +405,125 @@ const defaultSettings: HotelSettings = {
   invoicePrefix: 'HV-2026-'
 };
 
+export const defaultTenants: TenantAccount[] = [
+  {
+    id: 't_merridien',
+    slug: 'hotel-le-merridien',
+    name: 'Hotel Le Merridien',
+    email: 'merridien@hotel.com',
+    phone: '+91 98765 11223',
+    gstNumber: '36AAACH1234M1Z5',
+    subdomain: 'merridien.hotelvista.com',
+    currency: 'INR (₹)',
+    tier: 'Enterprise Multi-Property',
+    status: 'Active',
+    createdAt: '2026-01-01',
+    maxRooms: 150,
+    adminEmail: 'merridien@hotel.com',
+    enabledMenus: DEFAULT_ENABLED_MENUS
+  },
+  {
+    id: 't_main',
+    slug: 'hotelvista-grand',
+    name: 'HotelVista Grand',
+    email: 'admin@hotelvista.com',
+    phone: '+91 98765 43210',
+    gstNumber: '36AAACH7412K1Z9',
+    subdomain: 'grand.hotelvista.com',
+    currency: 'INR (₹)',
+    tier: 'Enterprise Multi-Property',
+    status: 'Active',
+    createdAt: '2026-01-01',
+    maxRooms: 100,
+    adminEmail: 'admin@hotelvista.com',
+    enabledMenus: DEFAULT_ENABLED_MENUS
+  },
+  {
+    id: 't_royal',
+    slug: 'royal-orchid-resort',
+    name: 'Royal Orchid Resort & Spa',
+    email: 'royal@resort.com',
+    phone: '+91 91234 56789',
+    gstNumber: '29AAACR9988P1Z3',
+    subdomain: 'royal.hotelvista.com',
+    currency: 'INR (₹)',
+    tier: 'Standard ERP',
+    status: 'Active',
+    createdAt: '2026-02-10',
+    maxRooms: 60,
+    adminEmail: 'royal@resort.com',
+    enabledMenus: DEFAULT_ENABLED_MENUS
+  }
+];
+
+export const defaultAccounts: ClientUserAccount[] = [
+  {
+    id: 'u_superadmin',
+    name: 'Super Admin',
+    email: 'superAdmin',
+    password: 'greenBridge',
+    role: 'super_admin',
+    tenantName: 'HotelVista Central SaaS',
+    status: 'Active',
+    createdAt: '2026-01-01'
+  },
+  {
+    id: 'u_merridien',
+    name: 'Le Merridien Admin',
+    email: 'merridien@hotel.com',
+    password: '123456',
+    role: 'admin',
+    tenantName: 'Hotel Le Merridien',
+    status: 'Active',
+    createdAt: '2026-01-01'
+  },
+  {
+    id: 'u_admin',
+    name: 'HotelVista System Admin',
+    email: 'admin@hotelvista.com',
+    password: 'admin123',
+    role: 'admin',
+    tenantName: 'HotelVista Grand',
+    status: 'Active',
+    createdAt: '2026-01-01'
+  },
+  {
+    id: 'u_reception',
+    name: 'Front Desk Reception',
+    email: 'reception@hotelvista.com',
+    password: 'reception123',
+    role: 'reception',
+    tenantName: 'HotelVista Grand',
+    status: 'Active',
+    createdAt: '2026-01-01'
+  }
+];
+
+export const defaultStockAdjustmentLogs: StockAdjustmentLog[] = [
+  {
+    id: 'adj_1',
+    itemId: 'inv_1',
+    itemName: 'Basmati Rice 25kg Bag',
+    category: 'Kitchen',
+    amount: 2,
+    unit: 'kg',
+    direction: 'out',
+    description: 'Kitchen dinner preparation usage',
+    date: '2026-09-10 10:15'
+  },
+  {
+    id: 'adj_2',
+    itemId: 'inv_2',
+    itemName: 'Kingfisher Premium Beer 650ml',
+    category: 'Liquor',
+    amount: 6,
+    unit: 'bottle',
+    direction: 'in',
+    description: 'Bar counter stock replenishment',
+    date: '2026-09-10 11:30'
+  }
+];
+
 // ==========================================
 // CONTEXT PROVIDER COMPONENT
 // ==========================================
@@ -413,7 +536,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return localStorage.getItem('hv_active_tenant_id') || 't_merridien';
   });
 
-  // Local ERP states, initialized to empty and filled via Firestore subscriptions
+  // Local ERP states, initialized to defaults and synced live via Firestore subscriptions
   const [rooms, setRooms] = useState<Room[]>(defaultRooms);
   const [preBookings, setPreBookings] = useState<PreBooking[]>([]);
   const [menuItems, setMenuItems] = useState<MenuItem[]>(defaultMenuItems);
@@ -422,9 +545,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [hallBookings, setHallBookings] = useState<HallBooking[]>([]);
   const [inventory, setInventory] = useState<InventoryItem[]>(defaultInventory);
   const [purchaseLogs, setPurchaseLogs] = useState<PurchaseLog[]>([]);
+  const [stockAdjustmentLogs, setStockAdjustmentLogs] = useState<StockAdjustmentLog[]>(defaultStockAdjustmentLogs);
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [settings, setSettings] = useState<HotelSettings>(defaultSettings);
+  const [userAccounts, setUserAccounts] = useState<ClientUserAccount[]>(defaultAccounts);
+  const [tenants, setTenants] = useState<TenantAccount[]>(defaultTenants);
+  const [activeTenantId, setActiveTenantId] = useState<string>(() => {
+    return localStorage.getItem('hv_active_tenant_id') || 't_merridien';
+  });
 
   const [userRole, setUserRole] = useState<UserRole>(() => {
     const saved = localStorage.getItem('hv_user_role');
@@ -630,6 +759,74 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return unsub;
   }, [tenantId]);
 
+  // Multi-tenant accounts sync from Live Firestore
+  useEffect(() => {
+    if (!isFirebaseConfigured || !db) return;
+    const unsub = onSnapshot(collection(db, 'tenants'), (snapshot) => {
+      if (snapshot.empty) {
+        // Seed initial default tenants to live cloud Firestore
+        const batch = writeBatch(db);
+        defaultTenants.forEach(t => {
+          batch.set(doc(db, 'tenants', t.id), t);
+        });
+        batch.commit().catch(err => console.error('Failed to seed tenants in Firestore:', err));
+      } else {
+        const data = snapshot.docs.map(d => d.data() as TenantAccount);
+        const validated = data.map(t => ({
+          ...t,
+          enabledMenus: t.enabledMenus && Array.isArray(t.enabledMenus) ? t.enabledMenus : DEFAULT_ENABLED_MENUS
+        }));
+        setTenants(validated);
+        localStorage.setItem('hv_tenants', JSON.stringify(validated));
+      }
+    }, (err) => {
+      console.error('Firestore tenants sync error:', err);
+    });
+    return unsub;
+  }, []);
+
+  // Global user accounts sync from Live Firestore
+  useEffect(() => {
+    if (!isFirebaseConfigured || !db) return;
+    const unsub = onSnapshot(collection(db, 'users'), (snapshot) => {
+      if (snapshot.empty) {
+        // Seed initial user accounts to live cloud Firestore
+        const batch = writeBatch(db);
+        defaultAccounts.forEach(u => {
+          batch.set(doc(db, 'users', u.id), u);
+        });
+        batch.commit().catch(err => console.error('Failed to seed users in Firestore:', err));
+      } else {
+        const data = snapshot.docs.map(d => d.data() as ClientUserAccount);
+        // Ensure superadmin account is always present
+        const superAdminExists = data.some(u => u.role === 'super_admin' || u.email === 'superAdmin');
+        if (!superAdminExists) {
+          setDoc(doc(db, 'users', defaultAccounts[0].id), defaultAccounts[0]).catch(console.error);
+        }
+        setUserAccounts(data);
+        localStorage.setItem('hv_user_accounts', JSON.stringify(data));
+      }
+    }, (err) => {
+      console.error('Firestore users sync error:', err);
+    });
+    return unsub;
+  }, []);
+
+  // Stock Adjustment Logs sync from Live Firestore
+  useEffect(() => {
+    if (!tenantId || !isFirebaseConfigured || !db) return;
+    const unsub = onSnapshot(collection(db, 'tenants', tenantId, 'stockAdjustmentLogs'), (snapshot) => {
+      if (!snapshot.empty) {
+        const data = snapshot.docs.map(d => d.data() as StockAdjustmentLog);
+        data.sort((a, b) => b.date.localeCompare(a.date));
+        setStockAdjustmentLogs(data);
+      }
+    }, (err) => {
+      console.error('Firestore stockAdjustmentLogs sync error:', err);
+    });
+    return unsub;
+  }, [tenantId]);
+
   // ==========================================
   // STATE MUTATION FUNCTIONS (FIRESTORE)
   // ==========================================
@@ -674,10 +871,213 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       timestamp: new Date().toLocaleString()
     };
     try {
-      await setDoc(doc(db, 'tenants', tenantId, 'auditLogs', id), newLog);
+      if (isFirebaseConfigured && db) {
+        await setDoc(doc(db, 'tenants', tenantId, 'auditLogs', id), newLog);
+      } else {
+        setAuditLogs(prev => [newLog, ...prev]);
+      }
     } catch (e) {
-      console.error('Failed to write audit log:', e);
+      console.error('Failed to log audit:', e);
     }
+  };
+
+  const currentTenant: TenantAccount = tenants.find(t => t.id === activeTenantId) || tenants[0] || defaultTenants[0];
+
+  const addTenantAccount = async (tenantData: Omit<TenantAccount, 'id' | 'createdAt'>, adminPassword?: string) => {
+    const newTenant: TenantAccount = {
+      ...tenantData,
+      id: 't_' + Date.now(),
+      createdAt: new Date().toISOString().split('T')[0],
+      enabledMenus: tenantData.enabledMenus && Array.isArray(tenantData.enabledMenus) 
+        ? tenantData.enabledMenus 
+        : DEFAULT_ENABLED_MENUS
+    };
+
+    // Optimistic local update
+    const updatedTenants = [newTenant, ...tenants];
+    setTenants(updatedTenants);
+    localStorage.setItem('hv_tenants', JSON.stringify(updatedTenants));
+
+    // Live Cloud Database update
+    if (isFirebaseConfigured && db) {
+      try {
+        await setDoc(doc(db, 'tenants', newTenant.id), newTenant);
+      } catch (e) {
+        console.error('Failed to create tenant in Firestore:', e);
+      }
+    }
+
+    // Provision default Admin account for this tenant
+    if (tenantData.adminEmail) {
+      const adminPass = adminPassword || 'tenant123';
+      const existingUser = userAccounts.find(u => u.email.toLowerCase() === tenantData.adminEmail.toLowerCase());
+      if (!existingUser) {
+        const newAdminUser: ClientUserAccount = {
+          id: 'u_' + Date.now(),
+          name: `${tenantData.name} Admin`,
+          email: tenantData.adminEmail,
+          password: adminPass,
+          role: 'admin',
+          tenantName: tenantData.name,
+          status: 'Active',
+          createdAt: new Date().toISOString().split('T')[0]
+        };
+        const updatedUsers = [newAdminUser, ...userAccounts];
+        setUserAccounts(updatedUsers);
+        localStorage.setItem('hv_user_accounts', JSON.stringify(updatedUsers));
+
+        if (isFirebaseConfigured && db) {
+          try {
+            await setDoc(doc(db, 'users', newAdminUser.id), newAdminUser);
+          } catch (e) {
+            console.error('Failed to save tenant admin to Firestore:', e);
+          }
+        }
+      }
+    }
+
+    addAudit('Tenant Onboarded', `Created new Multi-Tenant property account "${tenantData.name}" (${tenantData.tier})`);
+  };
+
+  const updateTenantStatus = async (id: string, status: 'Active' | 'Provisioning' | 'Suspended') => {
+    const updated = tenants.map(t => t.id === id ? { ...t, status } : t);
+    setTenants(updated);
+    localStorage.setItem('hv_tenants', JSON.stringify(updated));
+
+    if (isFirebaseConfigured && db) {
+      try {
+        await updateDoc(doc(db, 'tenants', id), { status });
+      } catch (e) {
+        console.error('Failed to update tenant status in Firestore:', e);
+      }
+    }
+
+    addAudit('Tenant Status Updated', `Updated tenant ${id} status to ${status}`);
+  };
+
+  const updateTenantMenus = async (id: string, enabledMenus: string[]) => {
+    const updated = tenants.map(t => t.id === id ? { ...t, enabledMenus } : t);
+    setTenants(updated);
+    localStorage.setItem('hv_tenants', JSON.stringify(updated));
+
+    if (isFirebaseConfigured && db) {
+      try {
+        await updateDoc(doc(db, 'tenants', id), { enabledMenus });
+      } catch (e) {
+        console.error('Failed to update tenant menus in Firestore:', e);
+      }
+    }
+
+    const targetTenant = tenants.find(t => t.id === id);
+    const tenantName = targetTenant ? targetTenant.name : id;
+    addAudit('Tenant Menus Updated', `Super Admin updated module access for property "${tenantName}": ${enabledMenus.length} modules enabled.`);
+  };
+
+  const deleteTenantAccount = async (id: string) => {
+    const updated = tenants.filter(t => t.id !== id);
+    setTenants(updated);
+    localStorage.setItem('hv_tenants', JSON.stringify(updated));
+
+    if (isFirebaseConfigured && db) {
+      try {
+        await deleteDoc(doc(db, 'tenants', id));
+      } catch (e) {
+        console.error('Failed to delete tenant from Firestore:', e);
+      }
+    }
+
+    addAudit('Tenant Deleted', `Deleted tenant account ${id}`);
+  };
+
+  const switchTenantContext = (newTenantId: string) => {
+    const matched = tenants.find(t => t.id === newTenantId);
+    if (matched) {
+      setActiveTenantId(newTenantId);
+      setTenantId(newTenantId);
+      localStorage.setItem('hv_active_tenant_id', newTenantId);
+      addAudit('Tenant Context Switch', `Super Admin switched view context to tenant "${matched.name}"`);
+    }
+  };
+
+  const addUserAccount = async (user: Omit<ClientUserAccount, 'id' | 'createdAt'>) => {
+    const newUser: ClientUserAccount = {
+      ...user,
+      id: 'u_' + Date.now(),
+      createdAt: new Date().toISOString().split('T')[0]
+    };
+    const updated = [newUser, ...userAccounts];
+    setUserAccounts(updated);
+    localStorage.setItem('hv_user_accounts', JSON.stringify(updated));
+
+    if (isFirebaseConfigured && db) {
+      try {
+        await setDoc(doc(db, 'users', newUser.id), newUser);
+      } catch (e) {
+        console.error('Failed to save user account to Firestore:', e);
+      }
+    }
+
+    addAudit('User Account Created', `Created client account ${user.email} (${user.role}) for ${user.tenantName}`);
+  };
+
+  const deleteUserAccount = async (id: string) => {
+    const updated = userAccounts.filter(u => u.id !== id);
+    setUserAccounts(updated);
+    localStorage.setItem('hv_user_accounts', JSON.stringify(updated));
+
+    if (isFirebaseConfigured && db) {
+      try {
+        await deleteDoc(doc(db, 'users', id));
+      } catch (e) {
+        console.error('Failed to delete user account from Firestore:', e);
+      }
+    }
+  };
+
+  const [currentUser, setCurrentUser] = useState<ClientUserAccount | null>(() => {
+    const saved = localStorage.getItem('hv_current_user');
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch (e) {}
+    }
+    return defaultAccounts[1]; // Merridien Admin default
+  });
+
+  const loginUser = (emailInput: string, passwordInput: string) => {
+    const cleanInput = emailInput.trim().toLowerCase();
+    const cleanPassword = passwordInput.trim();
+
+    const matched = userAccounts.find(u => {
+      const matchEmail = u.email.toLowerCase() === cleanInput;
+      const matchName = u.name.toLowerCase() === cleanInput;
+      const matchSuper = (cleanInput === 'superadmin' || cleanInput === 'super_admin') && u.role === 'super_admin';
+      return (matchEmail || matchName || matchSuper) && u.password === cleanPassword;
+    });
+
+    if (matched) {
+      setCurrentUser(matched);
+      setUserRole(matched.role);
+      const tenantMatch = tenants.find(t => t.name.toLowerCase() === (matched.tenantName || '').toLowerCase()) || tenants[0];
+      const targetTId = tenantMatch ? tenantMatch.id : 't_merridien';
+      setActiveTenantId(targetTId);
+      setTenantId(targetTId);
+      localStorage.setItem('hv_active_tenant_id', targetTId);
+      localStorage.setItem('hv_current_user', JSON.stringify(matched));
+      localStorage.setItem('hv_user_role', matched.role);
+      addAudit('User Login', `User ${matched.email} (${matched.name}) logged in successfully as ${matched.role}`);
+      return { success: true };
+    }
+
+    return { success: false, error: 'Invalid Username/Email or Password. Please check your credentials.' };
+  };
+
+  const logoutUser = () => {
+    if (currentUser) {
+      addAudit('User Logout', `User ${currentUser.email} logged out.`);
+    }
+    setCurrentUser(null);
+    localStorage.removeItem('hv_current_user');
   };
 
   // CHECK IN
@@ -1132,31 +1532,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
-  const [stockAdjustmentLogs, setStockAdjustmentLogs] = useState<StockAdjustmentLog[]>([
-    {
-      id: 'adj_1',
-      itemId: 'inv_1',
-      itemName: 'Basmati Rice 25kg Bag',
-      category: 'Kitchen',
-      amount: 2,
-      unit: 'kg',
-      direction: 'out',
-      description: 'Kitchen dinner preparation usage',
-      date: new Date().toISOString().split('T')[0] + ' 10:15'
-    },
-    {
-      id: 'adj_2',
-      itemId: 'inv_2',
-      itemName: 'Kingfisher Premium Beer 650ml',
-      category: 'Liquor',
-      amount: 6,
-      unit: 'bottle',
-      direction: 'in',
-      description: 'Bar counter stock replenishment',
-      date: new Date().toISOString().split('T')[0] + ' 11:30'
-    }
-  ]);
-
   const updateStockLevel = async (itemId: string, amount: number, direction: 'in' | 'out', category?: string, description?: string) => {
     const targetTenant = tenantId || activeTenantId || 't_merridien';
     let adjustedItem: InventoryItem | undefined = inventory.find(i => i.id === itemId);
@@ -1214,295 +1589,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       };
       setStockAdjustmentLogs(prev => [newLog, ...prev]);
 
+      if (isFirebaseConfigured && db) {
+        try {
+          await setDoc(doc(db, 'tenants', targetTenant, 'stockAdjustmentLogs', newLog.id), newLog);
+        } catch (e) {
+          console.error('Failed to write stock adjustment log to Firestore:', e);
+        }
+      }
+
       addAudit('Stock Adjustment', `Manual ${direction === 'in' ? 'Stock-In' : 'Stock-Out'} of ${amount} ${adjustedItem.unit} for ${adjustedItem.name} (${itemCat}) - Note: ${desc}`);
     }
-  };
-
-  const [userAccounts, setUserAccounts] = useState<ClientUserAccount[]>(() => {
-    const defaultAccounts: ClientUserAccount[] = [
-      {
-        id: 'u_superadmin',
-        name: 'Super Admin',
-        email: 'superAdmin',
-        password: 'greenBridge',
-        role: 'super_admin',
-        tenantName: 'HotelVista Central SaaS',
-        status: 'Active',
-        createdAt: '2026-01-01'
-      },
-      {
-        id: 'u_merridien',
-        name: 'Le Merridien Admin',
-        email: 'merridien@hotel.com',
-        password: '123456',
-        role: 'admin',
-        tenantName: 'Hotel Le Merridien',
-        status: 'Active',
-        createdAt: '2026-01-01'
-      },
-      {
-        id: 'u_admin',
-        name: 'HotelVista System Admin',
-        email: 'admin@hotelvista.com',
-        password: 'admin123',
-        role: 'admin',
-        tenantName: 'HotelVista Grand',
-        status: 'Active',
-        createdAt: '2026-01-01'
-      },
-      {
-        id: 'u_reception',
-        name: 'Front Desk Reception',
-        email: 'reception@hotelvista.com',
-        password: 'reception123',
-        role: 'reception',
-        tenantName: 'HotelVista Grand',
-        status: 'Active',
-        createdAt: '2026-01-01'
-      }
-    ];
-
-    const saved = localStorage.getItem('hv_user_accounts');
-    if (saved) {
-      try {
-        const parsed: ClientUserAccount[] = JSON.parse(saved);
-        const filtered = parsed.filter(u => u.role !== 'super_admin' && u.id !== 'u_superadmin');
-        const updated = [defaultAccounts[0], ...filtered];
-        localStorage.setItem('hv_user_accounts', JSON.stringify(updated));
-        return updated;
-      } catch (e) {}
-    }
-    return defaultAccounts;
-  });
-
-  // MULTI-TENANT ACCOUNTS STATE
-  const [tenants, setTenants] = useState<TenantAccount[]>(() => {
-    const defaultList: TenantAccount[] = [
-      {
-        id: 't_merridien',
-        slug: 'hotel-le-merridien',
-        name: 'Hotel Le Merridien',
-        email: 'merridien@hotel.com',
-        phone: '+91 98765 11223',
-        gstNumber: '36AAACH1234M1Z5',
-        subdomain: 'merridien.hotelvista.com',
-        currency: 'INR (₹)',
-        tier: 'Enterprise Multi-Property',
-        status: 'Active',
-        createdAt: '2026-01-01',
-        maxRooms: 150,
-        adminEmail: 'merridien@hotel.com',
-        enabledMenus: DEFAULT_ENABLED_MENUS
-      },
-      {
-        id: 't_main',
-        slug: 'hotelvista-grand',
-        name: 'HotelVista Grand',
-        email: 'admin@hotelvista.com',
-        phone: '+91 98765 43210',
-        gstNumber: '36AAACH7412K1Z9',
-        subdomain: 'grand.hotelvista.com',
-        currency: 'INR (₹)',
-        tier: 'Enterprise Multi-Property',
-        status: 'Active',
-        createdAt: '2026-01-01',
-        maxRooms: 100,
-        adminEmail: 'admin@hotelvista.com',
-        enabledMenus: DEFAULT_ENABLED_MENUS
-      },
-      {
-        id: 't_royal',
-        slug: 'royal-orchid-resort',
-        name: 'Royal Orchid Resort & Spa',
-        email: 'royal@resort.com',
-        phone: '+91 91234 56789',
-        gstNumber: '29AAACR9988P1Z3',
-        subdomain: 'royal.hotelvista.com',
-        currency: 'INR (₹)',
-        tier: 'Standard ERP',
-        status: 'Active',
-        createdAt: '2026-02-10',
-        maxRooms: 60,
-        adminEmail: 'royal@resort.com',
-        enabledMenus: DEFAULT_ENABLED_MENUS
-      }
-    ];
-
-    const saved = localStorage.getItem('hv_tenants');
-    if (saved) {
-      try {
-        const parsed: TenantAccount[] = JSON.parse(saved);
-        return parsed.map(t => ({
-          ...t,
-          enabledMenus: t.enabledMenus && Array.isArray(t.enabledMenus) ? t.enabledMenus : DEFAULT_ENABLED_MENUS
-        }));
-      } catch (e) {}
-    }
-    return defaultList;
-  });
-
-  const [activeTenantId, setActiveTenantId] = useState<string>(() => {
-    return localStorage.getItem('hv_active_tenant_id') || 't_merridien';
-  });
-
-  const currentTenant: TenantAccount = tenants.find(t => t.id === activeTenantId) || tenants[0] || {
-    id: 't_merridien',
-    slug: 'hotel-le-merridien',
-    name: 'Hotel Le Merridien',
-    email: 'merridien@hotel.com',
-    phone: '+91 98765 11223',
-    gstNumber: '36AAACH1234M1Z5',
-    subdomain: 'merridien.hotelvista.com',
-    currency: 'INR (₹)',
-    tier: 'Enterprise Multi-Property',
-    status: 'Active',
-    createdAt: '2026-01-01',
-    maxRooms: 150,
-    adminEmail: 'merridien@hotel.com',
-    enabledMenus: DEFAULT_ENABLED_MENUS
-  };
-
-  const addTenantAccount = (tenantData: Omit<TenantAccount, 'id' | 'createdAt'>, adminPassword?: string) => {
-    const newTenant: TenantAccount = {
-      ...tenantData,
-      id: 't_' + Date.now(),
-      createdAt: new Date().toISOString().split('T')[0],
-      enabledMenus: tenantData.enabledMenus && Array.isArray(tenantData.enabledMenus) 
-        ? tenantData.enabledMenus 
-        : DEFAULT_ENABLED_MENUS
-    };
-    const updatedTenants = [newTenant, ...tenants];
-    setTenants(updatedTenants);
-    localStorage.setItem('hv_tenants', JSON.stringify(updatedTenants));
-
-    // Provision default Admin account for this tenant
-    if (tenantData.adminEmail) {
-      const adminPass = adminPassword || 'tenant123';
-      const existingUser = userAccounts.find(u => u.email.toLowerCase() === tenantData.adminEmail.toLowerCase());
-      if (!existingUser) {
-        const newAdminUser: ClientUserAccount = {
-          id: 'u_' + Date.now(),
-          name: `${tenantData.name} Admin`,
-          email: tenantData.adminEmail,
-          password: adminPass,
-          role: 'admin',
-          tenantName: tenantData.name,
-          status: 'Active',
-          createdAt: new Date().toISOString().split('T')[0]
-        };
-        const updatedUsers = [newAdminUser, ...userAccounts];
-        setUserAccounts(updatedUsers);
-        localStorage.setItem('hv_user_accounts', JSON.stringify(updatedUsers));
-      }
-    }
-
-    addAudit('Tenant Onboarded', `Created new Multi-Tenant property account "${tenantData.name}" (${tenantData.tier})`);
-  };
-
-  const updateTenantStatus = (id: string, status: 'Active' | 'Provisioning' | 'Suspended') => {
-    const updated = tenants.map(t => t.id === id ? { ...t, status } : t);
-    setTenants(updated);
-    localStorage.setItem('hv_tenants', JSON.stringify(updated));
-    addAudit('Tenant Status Updated', `Updated tenant ${id} status to ${status}`);
-  };
-
-  const updateTenantMenus = (id: string, enabledMenus: string[]) => {
-    const updated = tenants.map(t => t.id === id ? { ...t, enabledMenus } : t);
-    setTenants(updated);
-    localStorage.setItem('hv_tenants', JSON.stringify(updated));
-    const targetTenant = tenants.find(t => t.id === id);
-    const tenantName = targetTenant ? targetTenant.name : id;
-    addAudit('Tenant Menus Updated', `Super Admin updated module access for property "${tenantName}": ${enabledMenus.length} modules enabled.`);
-  };
-
-  const deleteTenantAccount = (id: string) => {
-    const updated = tenants.filter(t => t.id !== id);
-    setTenants(updated);
-    localStorage.setItem('hv_tenants', JSON.stringify(updated));
-    addAudit('Tenant Deleted', `Deleted tenant account ${id}`);
-  };
-
-  const switchTenantContext = (newTenantId: string) => {
-    const matched = tenants.find(t => t.id === newTenantId);
-    if (matched) {
-      setActiveTenantId(newTenantId);
-      setTenantId(newTenantId);
-      localStorage.setItem('hv_active_tenant_id', newTenantId);
-      addAudit('Tenant Context Switch', `Super Admin switched view context to tenant "${matched.name}"`);
-    }
-  };
-
-  const addUserAccount = (user: Omit<ClientUserAccount, 'id' | 'createdAt'>) => {
-    const newUser: ClientUserAccount = {
-      ...user,
-      id: 'u_' + Date.now(),
-      createdAt: new Date().toISOString().split('T')[0]
-    };
-    const updated = [newUser, ...userAccounts];
-    setUserAccounts(updated);
-    localStorage.setItem('hv_user_accounts', JSON.stringify(updated));
-    addAudit('User Account Created', `Created client account ${user.email} (${user.role}) for ${user.tenantName}`);
-  };
-
-  const deleteUserAccount = (id: string) => {
-    const updated = userAccounts.filter(u => u.id !== id);
-    setUserAccounts(updated);
-    localStorage.setItem('hv_user_accounts', JSON.stringify(updated));
-  };
-
-  const [currentUser, setCurrentUser] = useState<ClientUserAccount | null>(() => {
-    const saved = localStorage.getItem('hv_current_user');
-    if (saved) {
-      try {
-        return JSON.parse(saved);
-      } catch (e) {}
-    }
-    return {
-      id: 'u_merridien',
-      name: 'Le Merridien Admin',
-      email: 'merridien@hotel.com',
-      password: '123456',
-      role: 'admin',
-      tenantName: 'Hotel Le Merridien',
-      status: 'Active',
-      createdAt: '2026-01-01'
-    };
-  });
-
-  const loginUser = (emailInput: string, passwordInput: string) => {
-    const cleanInput = emailInput.trim().toLowerCase();
-    const cleanPassword = passwordInput.trim();
-
-    const matched = userAccounts.find(u => {
-      const matchEmail = u.email.toLowerCase() === cleanInput;
-      const matchName = u.name.toLowerCase() === cleanInput;
-      const matchSuper = (cleanInput === 'superadmin' || cleanInput === 'super_admin') && u.role === 'super_admin';
-      return (matchEmail || matchName || matchSuper) && u.password === cleanPassword;
-    });
-
-    if (matched) {
-      setCurrentUser(matched);
-      setUserRole(matched.role);
-      const tenantMatch = tenants.find(t => t.name.toLowerCase() === (matched.tenantName || '').toLowerCase()) || tenants[0];
-      const targetTId = tenantMatch ? tenantMatch.id : 't_merridien';
-      setActiveTenantId(targetTId);
-      setTenantId(targetTId);
-      localStorage.setItem('hv_active_tenant_id', targetTId);
-      localStorage.setItem('hv_current_user', JSON.stringify(matched));
-      localStorage.setItem('hv_user_role', matched.role);
-      addAudit('User Login', `User ${matched.email} (${matched.name}) logged in successfully as ${matched.role}`);
-      return { success: true };
-    }
-
-    return { success: false, error: 'Invalid Username/Email or Password. Please check your credentials.' };
-  };
-
-  const logoutUser = () => {
-    if (currentUser) {
-      addAudit('User Logout', `User ${currentUser.email} logged out.`);
-    }
-    setCurrentUser(null);
-    localStorage.removeItem('hv_current_user');
   };
 
   // UNIFIED BILLING CALCULATIONS
@@ -1711,6 +1807,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       loadingAuth,
       tenantId,
       logout,
+      cloudDbConnected: isFirebaseConfigured,
+      cloudDbName,
       
       checkInRoom,
       checkOutRoom,

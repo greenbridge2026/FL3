@@ -18,7 +18,8 @@ import {
   Lock,
   UserCheck,
   Save,
-  AlertTriangle
+  AlertTriangle,
+  Database
 } from 'lucide-react';
 
 export interface TenantAccount {
@@ -56,7 +57,9 @@ export const SettingsView: React.FC = () => {
     rooms,
     addRoom,
     deleteRoom,
-    resetTenantData
+    resetTenantData,
+    cloudDbConnected,
+    cloudDbName
   } = useApp();
 
   // Hotel settings local copy
@@ -348,6 +351,28 @@ export const SettingsView: React.FC = () => {
             </div>
           );
         })()}
+
+        {/* Live Cloud DB Connection Card */}
+        <div className="p-3 bg-slate-50 dark:bg-slate-950 rounded-xl border dark:border-slate-800 space-y-2 text-xs">
+          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Database Infrastructure</span>
+          <div className="flex items-center justify-between">
+            <span className="flex items-center gap-1.5 font-bold text-slate-700 dark:text-slate-300">
+              <Database className="w-3.5 h-3.5 text-indigo-500" />
+              Firestore Cloud
+            </span>
+            <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold flex items-center gap-1 ${
+              cloudDbConnected 
+                ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20' 
+                : 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20'
+            }`}>
+              <span className={`w-1.5 h-1.5 rounded-full ${cloudDbConnected ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'}`} />
+              {cloudDbConnected ? 'Live Connected' : 'Local Fallback'}
+            </span>
+          </div>
+          <div className="text-[10px] font-mono text-slate-500 bg-white dark:bg-slate-900 p-1.5 rounded border dark:border-slate-800 break-all">
+            Project: <span className="text-indigo-600 dark:text-indigo-400 font-bold">{cloudDbName || 'vctor-e91b9'}</span>
+          </div>
+        </div>
 
       </div>
 
