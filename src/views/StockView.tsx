@@ -13,7 +13,8 @@ import {
   BarChart3,
   TrendingUp,
   DollarSign,
-  Search
+  Search,
+  Trash2
 } from 'lucide-react';
 
 export const StockView: React.FC = () => {
@@ -22,6 +23,7 @@ export const StockView: React.FC = () => {
     purchaseLogs, 
     stockAdjustmentLogs,
     addInventoryItem, 
+    deleteInventoryItem,
     recordPurchase, 
     updateStockLevel 
   } = useApp();
@@ -510,6 +512,7 @@ export const StockView: React.FC = () => {
                     <th className="py-2 text-center">Min Level</th>
                     <th className="py-2 text-right">In Stock</th>
                     <th className="py-2 text-center">Status</th>
+                    <th className="py-2 text-right">Action</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 dark:divide-slate-800/50">
@@ -533,9 +536,30 @@ export const StockView: React.FC = () => {
                             {isLow ? 'Low Stock' : 'Good'}
                           </span>
                         </td>
+                        <td className="py-3 text-right">
+                          <button
+                            onClick={() => {
+                              if (window.confirm(`Are you sure you want to delete SKU "${item.name}"? This action cannot be undone.`)) {
+                                deleteInventoryItem(item.id);
+                              }
+                            }}
+                            className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/30 rounded-lg transition-colors inline-flex items-center gap-1 text-xs font-semibold"
+                            title={`Delete SKU "${item.name}"`}
+                          >
+                            <Trash2 className="w-3.5 h-3.5 text-rose-500" />
+                            <span className="text-[11px] text-rose-600 dark:text-rose-400">Delete</span>
+                          </button>
+                        </td>
                       </tr>
                     );
                   })}
+                  {inventory.length === 0 && (
+                    <tr>
+                      <td colSpan={6} className="py-8 text-center text-xs text-slate-400">
+                        No inventory SKUs tracked yet. Use the form on the left to create a SKU track.
+                      </td>
+                    </tr>
+                  )}
                 </tbody>
               </table>
             </div>

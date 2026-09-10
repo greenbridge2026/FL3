@@ -323,6 +323,7 @@ interface AppContextType {
   cancelHallBooking: (id: string) => Promise<void>;
   
   addInventoryItem: (item: Omit<InventoryItem, 'id'>) => any;
+  deleteInventoryItem: (id: string) => Promise<void>;
   recordPurchase: (purchase: Omit<PurchaseLog, 'id' | 'date'>) => any;
   updateStockLevel: (itemId: string, amount: number, direction: 'in' | 'out', category?: string, description?: string) => any;
   
@@ -555,6 +556,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return localStorage.getItem('hv_active_tenant_id') || 't_merridien';
   });
 
+  const [currentUser, setCurrentUser] = useState<ClientUserAccount | null>(() => {
+    const saved = localStorage.getItem('hv_current_user');
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch (e) {}
+    }
+    return null; // Require login if not authenticated
+  });
+
   const [userRole, setUserRole] = useState<UserRole>(() => {
     const saved = localStorage.getItem('hv_user_role');
     return (saved as UserRole) || 'admin';
@@ -573,16 +584,29 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
     const unsub = onAuthStateChanged(auth, (firebaseUser) => {
       setUser(firebaseUser);
-      if (firebaseUser) {
-        setTenantId(firebaseUser.uid);
-      } else {
-        const savedTenant = localStorage.getItem('hv_active_tenant_id') || 't_merridien';
-        setTenantId(savedTenant);
-      }
+      // Retain property tenant context (do NOT lock tenantId to single firebaseUser.uid)
+      const savedTenant = localStorage.getItem('hv_active_tenant_id') || 't_merridien';
+      setTenantId(savedTenant);
+      setActiveTenantId(savedTenant);
       setLoadingAuth(false);
     });
     return unsub;
   }, []);
+
+  // Sync active property tenant context whenever logged in user changes
+  useEffect(() => {
+    if (currentUser && currentUser.role !== 'super_admin' && (tenants || []).length > 0) {
+      const matchingTenant = (tenants || []).find(t => 
+        (t.name || '').toLowerCase() === (currentUser.tenantName || '').toLowerCase() ||
+        t.id === currentUser.tenantName
+      );
+      if (matchingTenant && matchingTenant.id !== activeTenantId) {
+        setActiveTenantId(matchingTenant.id);
+        setTenantId(matchingTenant.id);
+        localStorage.setItem('hv_active_tenant_id', matchingTenant.id);
+      }
+    }
+  }, [currentUser, tenants, activeTenantId]);
 
   // Theme Sync effect (remains local)
   useEffect(() => {
@@ -699,11 +723,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (!tenantId || !isFirebaseConfigured || !db) return;
     const unsub = onSnapshot(collection(db, 'tenants', tenantId, 'inventory'), (snapshot) => {
       if (snapshot.empty) {
-        const batch = writeBatch(db);
-        defaultInventory.forEach(inv => {
-          batch.set(doc(db, 'tenants', tenantId, 'inventory', inv.id), inv);
-        });
-        batch.commit();
+        // Only seed default demo inventory items for the initial demo hotel 't_merridien'
+        if (tenantId === 't_merridien') {
+          const batch = writeBatch(db);
+          defaultInventory.forEach(inv => {
+            batch.set(doc(db, 'tenants', tenantId, 'inventory', inv.id), inv);
+          });
+          batch.commit();
+        } else {
+          setInventory([]);
+        }
       } else {
         const data = snapshot.docs.map(doc => doc.data() as InventoryItem);
         setInventory(data);
@@ -716,9 +745,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   useEffect(() => {
     if (!tenantId || !isFirebaseConfigured || !db) return;
     const unsub = onSnapshot(collection(db, 'tenants', tenantId, 'purchaseLogs'), (snapshot) => {
-      const data = snapshot.docs.map(doc => doc.data() as PurchaseLog);
-      data.sort((a, b) => b.date.localeCompare(a.date));
-      setPurchaseLogs(data);
+      if (snapshot.empty) {
+        setPurchaseLogs([]);
+      } else {
+        const data = snapshot.docs.map(doc => doc.data() as PurchaseLog);
+        data.sort((a, b) => b.date.localeCompare(a.date));
+        setPurchaseLogs(data);
+      }
     });
     return unsub;
   }, [tenantId]);
@@ -820,6 +853,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         const data = snapshot.docs.map(d => d.data() as StockAdjustmentLog);
         data.sort((a, b) => b.date.localeCompare(a.date));
         setStockAdjustmentLogs(data);
+      } else {
+        setStockAdjustmentLogs([]);
       }
     }, (err) => {
       console.error('Firestore stockAdjustmentLogs sync error:', err);
@@ -1025,16 +1060,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
-  const [currentUser, setCurrentUser] = useState<ClientUserAccount | null>(() => {
-    const saved = localStorage.getItem('hv_current_user');
-    if (saved) {
-      try {
-        return JSON.parse(saved);
-      } catch (e) {}
-    }
-    return defaultAccounts[1]; // Merridien Admin default
-  });
-
   const loginUser = (emailInput: string, passwordInput: string) => {
     const cleanInput = (emailInput || '').trim().toLowerCase();
     const cleanPassword = (passwordInput || '').trim();
@@ -1070,6 +1095,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
     setCurrentUser(null);
     localStorage.removeItem('hv_current_user');
+    localStorage.removeItem('hv_user_role');
+    localStorage.removeItem('hotelvista_active_tab');
   };
 
   // CHECK IN
@@ -1476,6 +1503,23 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   };
 
+  const deleteInventoryItem = async (id: string) => {
+    const targetTenant = tenantId || activeTenantId || 't_merridien';
+    const item = inventory.find(i => i.id === id);
+    setInventory(prev => prev.filter(i => i.id !== id));
+
+    try {
+      if (isFirebaseConfigured && db) {
+        await deleteDoc(doc(db, 'tenants', targetTenant, 'inventory', id));
+      }
+      if (item) {
+        await addAudit('Delete SKU Item', `Deleted inventory SKU track for ${item.name}`);
+      }
+    } catch (e) {
+      console.error('Failed to delete inventory item from Firestore:', e);
+    }
+  };
+
   const recordPurchase = async (purchase: Omit<PurchaseLog, 'id' | 'date'>) => {
     const targetTenant = tenantId || activeTenantId || 't_merridien';
     const id = 'p_' + Date.now();
@@ -1820,6 +1864,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       cancelHallBooking,
       
       addInventoryItem,
+      deleteInventoryItem,
       recordPurchase,
       updateStockLevel,
       
