@@ -12,7 +12,8 @@ import {
   Receipt, 
   BarChart3, 
   Settings, 
-  History 
+  History,
+  Crown
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -26,18 +27,19 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentTab, setTab, collapsed 
 
   // Route definitions with icon, roles allowed, and label
   const navItems = [
-    { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, roles: ['admin', 'reception'] },
-    { id: 'rooms', label: 'Room Management', icon: BedDouble, roles: ['admin', 'reception'] },
-    { id: 'prebookings', label: 'Pre Bookings', icon: CalendarDays, roles: ['admin', 'reception'] },
-    { id: 'restaurant', label: 'Restaurant POS', icon: UtensilsCrossed, roles: ['admin', 'restaurant'] },
-    { id: 'bar', label: 'Bar POS', icon: Wine, roles: ['admin', 'bar'] },
-    { id: 'laundry', label: 'Laundry Service', icon: Shirt, roles: ['admin', 'reception', 'store_manager'] },
-    { id: 'hall', label: 'Party Hall', icon: PartyPopper, roles: ['admin', 'reception'] },
-    { id: 'stock', label: 'Stock / Inventory', icon: Package, roles: ['admin', 'store_manager'] },
-    { id: 'billing', label: 'Unified Billing', icon: Receipt, roles: ['admin', 'reception'] },
-    { id: 'reports', label: 'Reports', icon: BarChart3, roles: ['admin', 'reception'] },
-    { id: 'settings', label: 'Settings', icon: Settings, roles: ['admin'] },
-    { id: 'audit', label: 'Audit Log', icon: History, roles: ['admin'] }
+    { id: 'superadmin', label: 'Super Admin Portal', icon: Crown, roles: ['super_admin'] },
+    { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, roles: ['super_admin', 'admin', 'reception'] },
+    { id: 'rooms', label: 'Room Management', icon: BedDouble, roles: ['super_admin', 'admin', 'reception'] },
+    { id: 'prebookings', label: 'Pre Bookings', icon: CalendarDays, roles: ['super_admin', 'admin', 'reception'] },
+    { id: 'restaurant', label: 'Restaurant POS', icon: UtensilsCrossed, roles: ['super_admin', 'admin', 'restaurant'] },
+    { id: 'bar', label: 'Bar POS', icon: Wine, roles: ['super_admin', 'admin', 'bar'] },
+    { id: 'laundry', label: 'Laundry Service', icon: Shirt, roles: ['super_admin', 'admin', 'reception', 'store_manager'] },
+    { id: 'hall', label: 'Party Hall', icon: PartyPopper, roles: ['super_admin', 'admin', 'reception'] },
+    { id: 'stock', label: 'Stock / Inventory', icon: Package, roles: ['super_admin', 'admin', 'store_manager'] },
+    { id: 'billing', label: 'Unified Billing', icon: Receipt, roles: ['super_admin', 'admin', 'reception'] },
+    { id: 'reports', label: 'Reports', icon: BarChart3, roles: ['super_admin', 'admin', 'reception'] },
+    { id: 'settings', label: 'Settings', icon: Settings, roles: ['super_admin', 'admin'] },
+    { id: 'audit', label: 'Audit Log', icon: History, roles: ['super_admin', 'admin'] }
   ];
 
   // Filter navigation items by active role

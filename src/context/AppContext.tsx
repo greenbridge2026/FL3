@@ -4,7 +4,23 @@ import React, { createContext, useContext, useState, useEffect } from 'react';
 // TYPES DEFINITIONS
 // ==========================================
 
-export type UserRole = 'admin' | 'reception' | 'restaurant' | 'bar' | 'store_manager';
+export type UserRole = 'super_admin' | 'admin' | 'reception' | 'restaurant' | 'bar' | 'store_manager';
+
+export interface TenantAccount {
+  id: string;
+  slug: string;
+  name: string;
+  email: string;
+  phone: string;
+  gstNumber: string;
+  subdomain: string;
+  currency: string;
+  tier: 'Boutique' | 'Standard ERP' | 'Enterprise Multi-Property';
+  status: 'Active' | 'Provisioning' | 'Suspended';
+  createdAt: string;
+  maxRooms: number;
+  adminEmail: string;
+}
 
 export type RoomCategory = 'Standard' | 'Premium' | 'Semi Premium' | 'Suite' | 'Family Suite' | 'Dormitory';
 
@@ -235,6 +251,8 @@ interface AppContextType {
   stockAdjustmentLogs: StockAdjustmentLog[];
   userAccounts: ClientUserAccount[];
   currentUser: ClientUserAccount | null;
+  tenants: TenantAccount[];
+  activeTenantId: string;
   auditLogs: AuditLog[];
   notifications: AppNotification[];
   settings: HotelSettings;
@@ -266,6 +284,10 @@ interface AppContextType {
   clearNotification: (id: string) => void;
   addUserAccount: (user: Omit<ClientUserAccount, 'id' | 'createdAt'>) => void;
   deleteUserAccount: (id: string) => void;
+  addTenantAccount: (tenant: Omit<TenantAccount, 'id' | 'createdAt'>, adminPassword?: string) => void;
+  updateTenantStatus: (id: string, status: 'Active' | 'Provisioning' | 'Suspended') => void;
+  deleteTenantAccount: (id: string) => void;
+  switchTenantContext: (tenantId: string) => void;
   loginUser: (email: string, password: string) => { success: boolean; error?: string };
   logoutUser: () => void;
 }
@@ -983,6 +1005,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
     return [
       {
+        id: 'u_superadmin',
+        name: 'Super Admin (SaaS Owner)',
+        email: 'superadmin@hotelvista.com',
+        password: 'super123',
+        role: 'super_admin',
+        tenantName: 'HotelVista Central SaaS',
+        status: 'Active',
+        createdAt: '2026-01-01'
+      },
+      {
         id: 'u_merridien',
         name: 'Le Merridien Admin',
         email: 'merridien@hotel.com',
@@ -990,7 +1022,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         role: 'admin',
         tenantName: 'Hotel Le Merridien',
         status: 'Active',
-        createdAt: new Date().toISOString().split('T')[0]
+        createdAt: '2026-01-01'
       },
       {
         id: 'u_admin',
@@ -1014,6 +1046,124 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
     ];
   });
+
+  // MULTI-TENANT ACCOUNTS STATE
+  const [tenants, setTenants] = useState<TenantAccount[]>(() => {
+    const saved = localStorage.getItem('hv_tenants');
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch (e) {}
+    }
+    return [
+      {
+        id: 't_merridien',
+        slug: 'hotel-le-merridien',
+        name: 'Hotel Le Merridien',
+        email: 'merridien@hotel.com',
+        phone: '+91 98765 11223',
+        gstNumber: '36AAACH1234M1Z5',
+        subdomain: 'merridien.hotelvista.com',
+        currency: 'INR (₹)',
+        tier: 'Enterprise Multi-Property',
+        status: 'Active',
+        createdAt: '2026-01-01',
+        maxRooms: 150,
+        adminEmail: 'merridien@hotel.com'
+      },
+      {
+        id: 't_main',
+        slug: 'hotelvista-grand',
+        name: 'HotelVista Grand',
+        email: 'admin@hotelvista.com',
+        phone: '+91 98765 43210',
+        gstNumber: '36AAACH7412K1Z9',
+        subdomain: 'grand.hotelvista.com',
+        currency: 'INR (₹)',
+        tier: 'Enterprise Multi-Property',
+        status: 'Active',
+        createdAt: '2026-01-01',
+        maxRooms: 100,
+        adminEmail: 'admin@hotelvista.com'
+      },
+      {
+        id: 't_royal',
+        slug: 'royal-orchid-resort',
+        name: 'Royal Orchid Resort & Spa',
+        email: 'royal@resort.com',
+        phone: '+91 91234 56789',
+        gstNumber: '29AAACR9988P1Z3',
+        subdomain: 'royal.hotelvista.com',
+        currency: 'INR (₹)',
+        tier: 'Standard ERP',
+        status: 'Active',
+        createdAt: '2026-02-10',
+        maxRooms: 60,
+        adminEmail: 'royal@resort.com'
+      }
+    ];
+  });
+
+  const [activeTenantId, setActiveTenantId] = useState<string>(() => {
+    return localStorage.getItem('hv_active_tenant_id') || 't_merridien';
+  });
+
+  const addTenantAccount = (tenantData: Omit<TenantAccount, 'id' | 'createdAt'>, adminPassword?: string) => {
+    const newTenant: TenantAccount = {
+      ...tenantData,
+      id: 't_' + Date.now(),
+      createdAt: new Date().toISOString().split('T')[0]
+    };
+    const updatedTenants = [newTenant, ...tenants];
+    setTenants(updatedTenants);
+    localStorage.setItem('hv_tenants', JSON.stringify(updatedTenants));
+
+    // Provision default Admin account for this tenant
+    if (tenantData.adminEmail) {
+      const adminPass = adminPassword || 'tenant123';
+      const existingUser = userAccounts.find(u => u.email.toLowerCase() === tenantData.adminEmail.toLowerCase());
+      if (!existingUser) {
+        const newAdminUser: ClientUserAccount = {
+          id: 'u_' + Date.now(),
+          name: `${tenantData.name} Admin`,
+          email: tenantData.adminEmail,
+          password: adminPass,
+          role: 'admin',
+          tenantName: tenantData.name,
+          status: 'Active',
+          createdAt: new Date().toISOString().split('T')[0]
+        };
+        const updatedUsers = [newAdminUser, ...userAccounts];
+        setUserAccounts(updatedUsers);
+        localStorage.setItem('hv_user_accounts', JSON.stringify(updatedUsers));
+      }
+    }
+
+    addAudit('Tenant Onboarded', `Created new Multi-Tenant property account "${tenantData.name}" (${tenantData.tier})`);
+  };
+
+  const updateTenantStatus = (id: string, status: 'Active' | 'Provisioning' | 'Suspended') => {
+    const updated = tenants.map(t => t.id === id ? { ...t, status } : t);
+    setTenants(updated);
+    localStorage.setItem('hv_tenants', JSON.stringify(updated));
+    addAudit('Tenant Status Updated', `Updated tenant ${id} status to ${status}`);
+  };
+
+  const deleteTenantAccount = (id: string) => {
+    const updated = tenants.filter(t => t.id !== id);
+    setTenants(updated);
+    localStorage.setItem('hv_tenants', JSON.stringify(updated));
+    addAudit('Tenant Deleted', `Deleted tenant account ${id}`);
+  };
+
+  const switchTenantContext = (tenantId: string) => {
+    const matched = tenants.find(t => t.id === tenantId);
+    if (matched) {
+      setActiveTenantId(tenantId);
+      localStorage.setItem('hv_active_tenant_id', tenantId);
+      addAudit('Tenant Context Switch', `Super Admin switched view context to tenant "${matched.name}"`);
+    }
+  };
 
   const addUserAccount = (user: Omit<ClientUserAccount, 'id' | 'createdAt'>) => {
     const newUser: ClientUserAccount = {
@@ -1175,6 +1325,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       clearNotification,
       addUserAccount,
       deleteUserAccount,
+      tenants,
+      activeTenantId,
+      addTenantAccount,
+      updateTenantStatus,
+      deleteTenantAccount,
+      switchTenantContext,
       currentUser,
       loginUser,
       logoutUser

@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { AppProvider, useApp } from './context/AppContext';
 import { Sidebar } from './components/Sidebar';
 import { RoleHeader } from './components/RoleHeader';
+import { LoginScreen } from './components/LoginScreen';
+import { SuperAdminView } from './views/SuperAdminView';
 import { DashboardView } from './views/DashboardView';
 import { RoomsView } from './views/RoomsView';
 import { PreBookingView } from './views/PreBookingView';
@@ -15,14 +17,14 @@ import { SettingsView } from './views/SettingsView';
 import { AuditLogView } from './views/AuditLogView';
 
 const AppContent: React.FC = () => {
-  const { userRole } = useApp();
+  const { userRole, currentUser } = useApp();
   
   // Read initial tab from location hash or localStorage to persist on reload
   const [currentTab, setCurrentTab] = useState(() => {
     const hash = window.location.hash.replace('#', '');
     if (hash) return hash;
     const saved = localStorage.getItem('hotelvista_active_tab');
-    return saved || 'dashboard';
+    return saved || (userRole === 'super_admin' ? 'superadmin' : 'dashboard');
   });
 
   const [selectedRoomForBilling, setSelectedRoomForBilling] = useState('');
@@ -53,6 +55,10 @@ const AppContent: React.FC = () => {
   // Role Tab Authorization Checks & Auto-Redirects
   useEffect(() => {
     const roleRoutes: Record<string, string[]> = {
+      super_admin: [
+        'superadmin', 'dashboard', 'rooms', 'prebookings', 'restaurant', 'bar', 
+        'laundry', 'hall', 'stock', 'billing', 'reports', 'settings', 'audit'
+      ],
       admin: [
         'dashboard', 'rooms', 'prebookings', 'restaurant', 'bar', 
         'laundry', 'hall', 'stock', 'billing', 'reports', 'settings', 'audit'
@@ -68,9 +74,14 @@ const AppContent: React.FC = () => {
     const allowed = roleRoutes[userRole] || [];
     if (!allowed.includes(currentTab)) {
       // Redirect to the first allowed tab for this role
-      setCurrentTab(allowed[0] || 'dashboard');
+      setCurrentTab(allowed[0] || (userRole === 'super_admin' ? 'superadmin' : 'dashboard'));
     }
   }, [userRole, currentTab]);
+
+  // If user is not logged in, render the full Login Screen authentication page
+  if (!currentUser) {
+    return <LoginScreen />;
+  }
 
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-slate-50 dark:bg-slate-950 transition-colors duration-300">
@@ -87,9 +98,14 @@ const AppContent: React.FC = () => {
         {/* Dynamic viewport */}
         <main className="flex-1 overflow-y-auto p-6 bg-slate-50/50 dark:bg-slate-950/20">
           
+          {currentTab === 'superadmin' && (
+            <SuperAdminView />
+          )}
+
           {currentTab === 'dashboard' && (
             <DashboardView setTab={setCurrentTab} />
           )}
+
 
           {currentTab === 'rooms' && (
             <RoomsView 

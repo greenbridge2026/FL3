@@ -42,7 +42,13 @@ export const SettingsView: React.FC = () => {
     deleteUserAccount, 
     switchRole, 
     addInventoryItem, 
-    addAudit 
+    addAudit,
+    tenants,
+    addTenantAccount,
+    updateTenantStatus,
+    deleteTenantAccount,
+    activeTenantId,
+    switchTenantContext
   } = useApp();
 
   // Hotel settings local copy
@@ -64,47 +70,6 @@ export const SettingsView: React.FC = () => {
   // Settings Sub-Tabs
   const [activeSettingsTab, setActiveSettingsTab] = useState<'hotel' | 'tenants' | 'users' | 'menu'>('hotel');
 
-  // Multi-Tenant Accounts List State
-  const [tenants, setTenants] = useState<TenantAccount[]>(() => {
-    const saved = localStorage.getItem('hv_tenants');
-    if (saved) {
-      try {
-        return JSON.parse(saved);
-      } catch (e) {}
-    }
-    return [
-      {
-        id: 't_merridien',
-        slug: 'hotel-le-merridien',
-        name: 'Hotel Le Merridien',
-        email: 'merridien@hotel.com',
-        phone: '+91 98765 11223',
-        gstNumber: '36AAACH1234M1Z5',
-        subdomain: 'merridien.hotelvista.com',
-        currency: 'INR (₹)',
-        tier: 'Enterprise Multi-Property',
-        status: 'Active',
-        createdAt: '2026-01-01'
-      },
-      {
-        id: 't_main',
-        slug: 'hotelvista-main',
-        name: settings.name || 'HotelVista Grand - Main Property',
-        email: settings.email || 'admin@hotelvista.com',
-        phone: settings.phone || '+91 98765 43210',
-        gstNumber: settings.gstNumber || '36AAACH7412K1Z9',
-        subdomain: 'main.hotelvista.com',
-        currency: 'INR (₹)',
-        tier: 'Enterprise Multi-Property',
-        status: 'Active',
-        createdAt: '2026-01-01'
-      }
-    ];
-  });
-
-  const [activeTenantId, setActiveTenantId] = useState<string>(() => {
-    return localStorage.getItem('hv_active_tenant_id') || 't_merridien';
-  });
 
   // New Tenant Registration Form State
   const [tenantName, setTenantName] = useState('');
@@ -183,8 +148,7 @@ export const SettingsView: React.FC = () => {
     const generatedSlug = tenantSlug || tenantName.toLowerCase().replace(/[^a-z0-9]+/g, '-');
     const generatedSubdomain = tenantSubdomain || `${generatedSlug}.hotelvista.com`;
 
-    const newTenant: TenantAccount = {
-      id: 't_' + Date.now(),
+    addTenantAccount({
       slug: generatedSlug,
       name: tenantName,
       email: tenantEmail,
@@ -194,27 +158,9 @@ export const SettingsView: React.FC = () => {
       currency: tenantCurrency,
       tier: tenantTier,
       status: 'Active',
-      createdAt: new Date().toISOString().split('T')[0]
-    };
-
-    const updated = [newTenant, ...tenants];
-    setTenants(updated);
-    localStorage.setItem('hv_tenants', JSON.stringify(updated));
-
-    setActiveTenantId(newTenant.id);
-    localStorage.setItem('hv_active_tenant_id', newTenant.id);
-
-    // Automatically create admin client credentials for the new tenant
-    addUserAccount({
-      name: `${tenantName} Admin`,
-      email: tenantEmail,
-      password: '123456',
-      role: 'admin',
-      tenantName: tenantName,
-      status: 'Active'
-    });
-
-    addAudit('Multi-Tenant Provision', `Created & provisioned new tenant: ${tenantName} (${generatedSubdomain}) with admin user ${tenantEmail}`);
+      maxRooms: 100,
+      adminEmail: tenantEmail
+    }, '123456');
 
     setTenantName('');
     setTenantSlug('');
@@ -223,13 +169,11 @@ export const SettingsView: React.FC = () => {
     setTenantGst('');
     setTenantSubdomain('');
 
-    alert(`Tenant account "${newTenant.name}" and client login (${tenantEmail} / 123456) created successfully!`);
+    alert(`Tenant account "${tenantName}" and admin login (${tenantEmail} / 123456) created successfully!`);
   };
 
   const handleSwitchTenant = (tenant: TenantAccount) => {
-    setActiveTenantId(tenant.id);
-    localStorage.setItem('hv_active_tenant_id', tenant.id);
-    
+    switchTenantContext(tenant.id);
     setHotelName(tenant.name);
     setEmail(tenant.email);
     setPhone(tenant.phone);

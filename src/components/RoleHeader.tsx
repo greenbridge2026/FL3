@@ -26,7 +26,8 @@ export const RoleHeader: React.FC<RoleHeaderProps> = ({ onToggleSidebar }) => {
   const activeNotifications = notifications.filter(n => !n.read);
 
   const roles: { value: UserRole; label: string; icon: string; desc: string }[] = [
-    { value: 'admin', label: 'Administrator', icon: '⚡', desc: 'Full access to all systems & configuration' },
+    { value: 'super_admin', label: 'Super Admin', icon: '👑', desc: 'Global multi-tenant SaaS management & property onboarding' },
+    { value: 'admin', label: 'Administrator', icon: '⚡', desc: 'Full access to all property systems & configuration' },
     { value: 'reception', label: 'Receptionist', icon: '🔑', desc: 'Room bookings, Check-In, Unified billing' },
     { value: 'restaurant', label: 'Restaurant Staff', icon: '🍳', desc: 'Create restaurant orders, KOT printing' },
     { value: 'bar', label: 'Bar Staff', icon: '🍷', desc: 'Create bar orders, Bar billing' },
@@ -70,10 +71,10 @@ export const RoleHeader: React.FC<RoleHeaderProps> = ({ onToggleSidebar }) => {
           <button
             onClick={() => setShowLoginModal(true)}
             className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg shadow-sm transition-all"
-            title="Client Sign In & Login Portal"
+            title="Switch Account & Login Portal"
           >
             <LogIn className="w-3.5 h-3.5" />
-            <span>{currentUser ? 'Client Account' : 'Sign In'}</span>
+            <span>{currentUser ? 'Switch User' : 'Sign In'}</span>
           </button>
 
           {/* DEV ROLE SWITCHER */}
@@ -221,10 +222,10 @@ export const RoleHeader: React.FC<RoleHeaderProps> = ({ onToggleSidebar }) => {
             {currentUser && (
               <button
                 onClick={logoutUser}
-                className="p-1 text-slate-400 hover:text-rose-500 transition-colors ml-1"
+                className="flex items-center gap-1 p-1.5 text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-lg transition-colors ml-1"
                 title="Log Out Account"
               >
-                <LogOut className="w-3.5 h-3.5" />
+                <LogOut className="w-4 h-4 text-rose-500" />
               </button>
             )}
           </div>
