@@ -16,9 +16,11 @@ export const RoleHeader: React.FC<RoleHeaderProps> = ({ onToggleSidebar }) => {
     notifications, 
     clearNotification, 
     currentUser, 
-    logoutUser 
+    logoutUser,
+    user,
+    logout,
+    settings 
   } = useApp();
-
   const [showRoles, setShowRoles] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
   const [showLoginModal, setShowLoginModal] = useState(false);
@@ -51,14 +53,14 @@ export const RoleHeader: React.FC<RoleHeaderProps> = ({ onToggleSidebar }) => {
             <Menu className="w-5 h-5" />
           </button>
 
-          <div className="flex items-center justify-center w-10 h-10 rounded-xl bg-gradient-to-tr from-indigo-500 to-violet-600 text-white font-bold shadow-md shadow-indigo-500/20">
-            <span>HV</span>
+          <div className="flex items-center justify-center w-10 h-10 rounded-xl bg-gradient-to-tr from-indigo-500 to-violet-600 text-white font-bold shadow-md shadow-indigo-500/20 flex-shrink-0">
+            <span>{settings?.name ? settings.name.substring(0, 2).toUpperCase() : 'HV'}</span>
           </div>
-          <div>
-            <h1 className="text-lg font-bold bg-gradient-to-r from-slate-900 to-slate-700 dark:from-white dark:to-slate-300 bg-clip-text text-transparent">
-              HotelVista ERP
+          <div className="max-w-[200px] md:max-w-xs">
+            <h1 className="text-sm md:text-base font-bold bg-gradient-to-r from-slate-900 to-slate-700 dark:from-white dark:to-slate-300 bg-clip-text text-transparent truncate" title={settings?.name || 'HotelVista ERP'}>
+              {settings?.name || 'HotelVista ERP'}
             </h1>
-            <p className="text-xs text-indigo-500 dark:text-indigo-400 font-semibold flex items-center gap-1">
+            <p className="text-[10px] text-indigo-500 dark:text-indigo-400 font-semibold flex items-center gap-1">
               <span>●</span> {currentUser ? currentUser.tenantName : 'Active Role'}: {currentRoleInfo?.label}
             </p>
           </div>
@@ -208,20 +210,23 @@ export const RoleHeader: React.FC<RoleHeaderProps> = ({ onToggleSidebar }) => {
           {/* STAFF SIGNATURE PROFILE / CURRENT USER */}
           <div className="flex items-center gap-2 pl-2 border-l border-slate-200/50 dark:border-slate-800/50">
             <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-indigo-500 to-violet-600 flex items-center justify-center font-bold text-white text-xs shadow-sm">
-              {currentUser ? currentUser.name.charAt(0).toUpperCase() : userRole.charAt(0).toUpperCase()}
+              {currentUser ? currentUser.name.charAt(0).toUpperCase() : (user?.email ? user.email.charAt(0).toUpperCase() : userRole.charAt(0).toUpperCase())}
             </div>
-            <div className="hidden md:block">
-              <p className="text-xs font-bold text-slate-800 dark:text-slate-200 leading-tight">
-                {currentUser ? currentUser.name : 'Staff On-Duty'}
+            <div className="hidden md:block max-w-[120px]">
+              <p className="text-xs font-bold text-slate-800 dark:text-slate-200 leading-tight truncate" title={currentUser?.name || user?.email || 'Staff'}>
+                {currentUser ? currentUser.name : (user?.email ? user.email.split('@')[0] : 'Staff On-Duty')}
               </p>
-              <p className="text-[9px] font-mono text-indigo-500">
-                {currentUser ? currentUser.email : currentRoleInfo?.label}
+              <p className="text-[9px] font-mono text-indigo-500 truncate">
+                {currentUser ? currentUser.email : (user?.email || currentRoleInfo?.label)}
               </p>
             </div>
 
-            {currentUser && (
+            {(currentUser || user) && (
               <button
-                onClick={logoutUser}
+                onClick={() => {
+                  if (logoutUser) logoutUser();
+                  if (logout) logout();
+                }}
                 className="flex items-center gap-1 p-1.5 text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-lg transition-colors ml-1"
                 title="Log Out Account"
               >

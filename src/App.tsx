@@ -15,9 +15,10 @@ import { UnifiedBillingView } from './views/UnifiedBillingView';
 import { ReportsView } from './views/ReportsView';
 import { SettingsView } from './views/SettingsView';
 import { AuditLogView } from './views/AuditLogView';
+import { Auth } from './components/Auth';
 
 const AppContent: React.FC = () => {
-  const { userRole, currentUser } = useApp();
+  const { userRole, currentUser, user, loadingAuth } = useApp();
   
   // Read initial tab from location hash or localStorage to persist on reload
   const [currentTab, setCurrentTab] = useState(() => {
@@ -26,7 +27,6 @@ const AppContent: React.FC = () => {
     const saved = localStorage.getItem('hotelvista_active_tab');
     return saved || (userRole === 'super_admin' ? 'superadmin' : 'dashboard');
   });
-
   const [selectedRoomForBilling, setSelectedRoomForBilling] = useState('');
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
@@ -78,8 +78,17 @@ const AppContent: React.FC = () => {
     }
   }, [userRole, currentTab]);
 
-  // If user is not logged in, render the full Login Screen authentication page
-  if (!currentUser) {
+  if (loadingAuth) {
+    return (
+      <div className="h-screen w-screen flex flex-col items-center justify-center bg-slate-950 text-slate-200">
+        <div className="animate-spin rounded-full h-10 w-10 border-4 border-indigo-500/20 border-t-indigo-500 mb-4" />
+        <p className="text-xs font-semibold tracking-wider text-slate-400 uppercase">Loading HotelVista console...</p>
+      </div>
+    );
+  }
+
+  // If user is not logged in, render authentication page
+  if (!currentUser && !user) {
     return <LoginScreen />;
   }
 
