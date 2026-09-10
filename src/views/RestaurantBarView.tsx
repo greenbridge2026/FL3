@@ -45,9 +45,11 @@ export const RestaurantBarView: React.FC = () => {
   const categories = isBarMode ? liquorCategories : foodCategories;
 
   // Filter menu items by Mode (Bar/Restaurant) and category
-  const filteredMenuItems = menuItems.filter(item => {
+  const filteredMenuItems = (menuItems || []).filter(item => {
+    if (!item) return false;
+    const term = (searchTerm || '').toLowerCase().trim();
     const matchesMode = item.isBar === isBarMode;
-    const matchesSearch = item.name.toLowerCase().includes(searchTerm.toLowerCase());
+    const matchesSearch = !term || (item.name || '').toLowerCase().includes(term);
     const matchesCategory = selectedCategory === 'All' || item.category === selectedCategory;
     return matchesMode && matchesSearch && matchesCategory;
   });

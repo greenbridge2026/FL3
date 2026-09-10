@@ -215,10 +215,12 @@ export const SuperAdminView: React.FC = () => {
   };
 
   // Filtered Tenants
-  const filteredTenants = tenants.filter(t => {
-    const matchesSearch = t.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
-                          t.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                          t.subdomain.toLowerCase().includes(searchTerm.toLowerCase());
+  const filteredTenants = (tenants || []).filter(t => {
+    if (!t) return false;
+    const term = (searchTerm || '').toLowerCase();
+    const matchesSearch = (t.name || '').toLowerCase().includes(term) || 
+                          (t.email || '').toLowerCase().includes(term) ||
+                          (t.subdomain || '').toLowerCase().includes(term);
     const matchesStatus = statusFilter === 'All' || t.status === statusFilter;
     return matchesSearch && matchesStatus;
   });
@@ -714,8 +716,9 @@ export const SuperAdminView: React.FC = () => {
             <div className="flex-1 overflow-y-auto p-4 space-y-2.5 divide-y divide-slate-100 dark:divide-slate-800/60">
               {ALL_TENANT_MENUS
                 .filter(menu => {
-                  const matchSearch = menu.label.toLowerCase().includes(menuSearch.toLowerCase()) || 
-                                      menu.description.toLowerCase().includes(menuSearch.toLowerCase());
+                  const term = (menuSearch || '').toLowerCase();
+                  const matchSearch = (menu.label || '').toLowerCase().includes(term) || 
+                                      (menu.description || '').toLowerCase().includes(term);
                   const matchCat = menuFilterCategory === 'All' || menu.category === menuFilterCategory;
                   return matchSearch && matchCat;
                 })

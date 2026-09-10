@@ -6,11 +6,13 @@ export const AuditLogView: React.FC = () => {
   const { auditLogs } = useApp();
   const [searchTerm, setSearchTerm] = useState('');
 
-  const filteredLogs = auditLogs.filter(log => {
+  const filteredLogs = (auditLogs || []).filter(log => {
+    if (!log) return false;
+    const term = (searchTerm || '').toLowerCase();
     const matchesSearch = 
-      log.action.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      log.details.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      log.username.toLowerCase().includes(searchTerm.toLowerCase());
+      (log.action || '').toLowerCase().includes(term) ||
+      (log.details || '').toLowerCase().includes(term) ||
+      (log.username || '').toLowerCase().includes(term);
     return matchesSearch;
   });
 

@@ -910,7 +910,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     // Provision default Admin account for this tenant
     if (tenantData.adminEmail) {
       const adminPass = adminPassword || 'tenant123';
-      const existingUser = userAccounts.find(u => u.email.toLowerCase() === tenantData.adminEmail.toLowerCase());
+      const existingUser = (userAccounts || []).find(u => (u.email || '').toLowerCase() === (tenantData.adminEmail || '').toLowerCase());
       if (!existingUser) {
         const newAdminUser: ClientUserAccount = {
           id: 'u_' + Date.now(),
@@ -924,13 +924,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         };
         const updatedUsers = [newAdminUser, ...userAccounts];
         setUserAccounts(updatedUsers);
-        localStorage.setItem('hv_user_accounts', JSON.stringify(updatedUsers));
-
         if (isFirebaseConfigured && db) {
           try {
             await setDoc(doc(db, 'users', newAdminUser.id), newAdminUser);
           } catch (e) {
-            console.error('Failed to save tenant admin to Firestore:', e);
+            console.error('Failed to create admin user in Firestore:', e);
           }
         }
       }
@@ -940,10 +938,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const updateTenantStatus = async (id: string, status: 'Active' | 'Provisioning' | 'Suspended') => {
-    const updated = tenants.map(t => t.id === id ? { ...t, status } : t);
-    setTenants(updated);
-    localStorage.setItem('hv_tenants', JSON.stringify(updated));
+    const target = tenants.find(t => t.id === id);
+    if (!target) return;
 
+    setTenants(prev => prev.map(t => t.id === id ? { ...t, status } : t));
     if (isFirebaseConfigured && db) {
       try {
         await updateDoc(doc(db, 'tenants', id), { status });
@@ -951,15 +949,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         console.error('Failed to update tenant status in Firestore:', e);
       }
     }
-
-    addAudit('Tenant Status Updated', `Updated tenant ${id} status to ${status}`);
+    await addAudit('Tenant Status Change', `Tenant ${target.name} status updated to ${status}`);
   };
 
   const updateTenantMenus = async (id: string, enabledMenus: string[]) => {
-    const updated = tenants.map(t => t.id === id ? { ...t, enabledMenus } : t);
-    setTenants(updated);
-    localStorage.setItem('hv_tenants', JSON.stringify(updated));
+    const target = tenants.find(t => t.id === id);
+    if (!target) return;
 
+    setTenants(prev => prev.map(t => t.id === id ? { ...t, enabledMenus } : t));
     if (isFirebaseConfigured && db) {
       try {
         await updateDoc(doc(db, 'tenants', id), { enabledMenus });
@@ -967,17 +964,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         console.error('Failed to update tenant menus in Firestore:', e);
       }
     }
-
-    const targetTenant = tenants.find(t => t.id === id);
-    const tenantName = targetTenant ? targetTenant.name : id;
-    addAudit('Tenant Menus Updated', `Super Admin updated module access for property "${tenantName}": ${enabledMenus.length} modules enabled.`);
+    await addAudit('Tenant Menu Permissions', `Updated menu access permissions for tenant ${target.name}`);
   };
 
   const deleteTenantAccount = async (id: string) => {
-    const updated = tenants.filter(t => t.id !== id);
-    setTenants(updated);
-    localStorage.setItem('hv_tenants', JSON.stringify(updated));
+    const target = tenants.find(t => t.id === id);
+    if (!target) return;
 
+    setTenants(prev => prev.filter(t => t.id !== id));
     if (isFirebaseConfigured && db) {
       try {
         await deleteDoc(doc(db, 'tenants', id));
@@ -985,21 +979,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         console.error('Failed to delete tenant from Firestore:', e);
       }
     }
-
-    addAudit('Tenant Deleted', `Deleted tenant account ${id}`);
+    await addAudit('Tenant Deletion', `Deleted tenant account ${target.name}`);
   };
 
-  const switchTenantContext = (newTenantId: string) => {
-    const matched = tenants.find(t => t.id === newTenantId);
-    if (matched) {
-      setActiveTenantId(newTenantId);
-      setTenantId(newTenantId);
-      localStorage.setItem('hv_active_tenant_id', newTenantId);
-      addAudit('Tenant Context Switch', `Super Admin switched view context to tenant "${matched.name}"`);
-    }
+  const switchTenantContext = (tenantAccountId: string) => {
+    setActiveTenantId(tenantAccountId);
+    setTenantId(tenantAccountId);
+    localStorage.setItem('hv_active_tenant_id', tenantAccountId);
   };
 
+  // CLIENT USERS MANAGEMENT
   const addUserAccount = async (user: Omit<ClientUserAccount, 'id' | 'createdAt'>) => {
+    const id = 'u_' + Date.now();
     const newUser: ClientUserAccount = {
       ...user,
       id: 'u_' + Date.now(),
@@ -1045,12 +1036,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   });
 
   const loginUser = (emailInput: string, passwordInput: string) => {
-    const cleanInput = emailInput.trim().toLowerCase();
-    const cleanPassword = passwordInput.trim();
+    const cleanInput = (emailInput || '').trim().toLowerCase();
+    const cleanPassword = (passwordInput || '').trim();
 
-    const matched = userAccounts.find(u => {
-      const matchEmail = u.email.toLowerCase() === cleanInput;
-      const matchName = u.name.toLowerCase() === cleanInput;
+    const matched = (userAccounts || []).find(u => {
+      if (!u) return false;
+      const matchEmail = (u.email || '').toLowerCase() === cleanInput;
+      const matchName = (u.name || '').toLowerCase() === cleanInput;
       const matchSuper = (cleanInput === 'superadmin' || cleanInput === 'super_admin') && u.role === 'super_admin';
       return (matchEmail || matchName || matchSuper) && u.password === cleanPassword;
     });
@@ -1058,7 +1050,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (matched) {
       setCurrentUser(matched);
       setUserRole(matched.role);
-      const tenantMatch = tenants.find(t => t.name.toLowerCase() === (matched.tenantName || '').toLowerCase()) || tenants[0];
+      const tenantMatch = (tenants || []).find(t => (t.name || '').toLowerCase() === (matched.tenantName || '').toLowerCase()) || tenants[0];
       const targetTId = tenantMatch ? tenantMatch.id : 't_merridien';
       setActiveTenantId(targetTId);
       setTenantId(targetTId);
@@ -1341,7 +1333,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
       // Update stock levels based on menu items sold
       order.items.forEach(async (orderItem) => {
-        const match = inventory.find(inv => inv.name.toLowerCase() === orderItem.name.toLowerCase());
+        const match = (inventory || []).find(inv => (inv.name || '').toLowerCase() === (orderItem.name || '').toLowerCase());
         if (match) {
           await updateStockLevel(match.id, orderItem.quantity, 'out');
         }
@@ -1383,7 +1375,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       await addAudit('Laundry Post', `Created laundry ticket ${orderNo} (₹${order.totalPrice}) and added to Room ${order.roomNumber}`);
       
       // Notify room supply use
-      const detergent = inventory.find(i => i.name.toLowerCase().includes('detergent'));
+      const detergent = (inventory || []).find(i => (i.name || '').toLowerCase().includes('detergent'));
       if (detergent) {
         const detergentUsage = 0.2 * order.items.reduce((acc, it) => acc + it.quantity, 0);
         await updateStockLevel(detergent.id, detergentUsage, 'out');
@@ -1496,7 +1488,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     // Optimistically update purchaseLogs and inventory immediately
     setPurchaseLogs(prev => [newPurchase, ...prev]);
     setInventory(prev => prev.map(item => {
-      if (item.name.toLowerCase() === purchase.itemName.toLowerCase()) {
+      if ((item.name || '').toLowerCase() === (purchase.itemName || '').toLowerCase()) {
         return { ...item, stock: item.stock + purchase.quantity };
       }
       return item;
@@ -1509,7 +1501,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         batch.set(doc(db, 'tenants', targetTenant, 'purchaseLogs', id), newPurchase);
 
         // Update stock levels
-        const itemMatch = inventory.find(item => item.name.toLowerCase() === purchase.itemName.toLowerCase());
+        const itemMatch = (inventory || []).find(item => (item.name || '').toLowerCase() === (purchase.itemName || '').toLowerCase());
         if (itemMatch) {
           const newStock = itemMatch.stock + purchase.quantity;
           
