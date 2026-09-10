@@ -17,6 +17,30 @@ import { auth, db, isFirebaseConfigured } from '../firebase';
 
 export type UserRole = 'super_admin' | 'admin' | 'reception' | 'restaurant' | 'bar' | 'store_manager';
 
+export interface TenantMenuDefinition {
+  id: string;
+  label: string;
+  category: 'Core' | 'Operations' | 'F&B' | 'Services' | 'Events' | 'Inventory' | 'Finance' | 'Administration' | 'Security';
+  description: string;
+}
+
+export const ALL_TENANT_MENUS: TenantMenuDefinition[] = [
+  { id: 'dashboard', label: 'Dashboard', category: 'Core', description: 'Overview KPI metrics, occupancy & recent activities' },
+  { id: 'rooms', label: 'Room Management', category: 'Operations', description: 'Live room rack, check-in, checkout & housekeeping' },
+  { id: 'prebookings', label: 'Pre Bookings', category: 'Operations', description: 'Advance room reservations & guest deposits' },
+  { id: 'restaurant', label: 'Restaurant POS', category: 'F&B', description: 'Dining POS table orders & room charge billing' },
+  { id: 'bar', label: 'Bar POS', category: 'F&B', description: 'Liquor / Bar POS orders & bottle dispensing' },
+  { id: 'laundry', label: 'Laundry Service', category: 'Services', description: 'Guest garment laundry tracking & express service' },
+  { id: 'hall', label: 'Party Hall', category: 'Events', description: 'Banquet hall reservations, sound, catering & slots' },
+  { id: 'stock', label: 'Stock / Inventory', category: 'Inventory', description: 'SKU tracking, reorder thresholds & purchase logs' },
+  { id: 'billing', label: 'Unified Billing', category: 'Finance', description: 'Consolidated folio checkout, invoices & settlements' },
+  { id: 'reports', label: 'Reports', category: 'Finance', description: 'Sales, collection summaries & tax reports' },
+  { id: 'settings', label: 'Settings', category: 'Administration', description: 'Property details, tax rates & invoice prefixes' },
+  { id: 'audit', label: 'Audit Log', category: 'Security', description: 'Security trails, user actions & modification logs' }
+];
+
+export const DEFAULT_ENABLED_MENUS: string[] = ALL_TENANT_MENUS.map(m => m.id);
+
 export interface TenantAccount {
   id: string;
   slug: string;
@@ -31,6 +55,7 @@ export interface TenantAccount {
   createdAt: string;
   maxRooms: number;
   adminEmail: string;
+  enabledMenus?: string[];
 }
 
 export type RoomCategory = 'Standard' | 'Premium' | 'Semi Premium' | 'Suite' | 'Family Suite' | 'Dormitory';
@@ -264,6 +289,7 @@ interface AppContextType {
   currentUser: ClientUserAccount | null;
   tenants: TenantAccount[];
   activeTenantId: string;
+  currentTenant: TenantAccount;
   auditLogs: AuditLog[];
   notifications: AppNotification[];
   settings: HotelSettings;
@@ -303,6 +329,7 @@ interface AppContextType {
   deleteUserAccount: (id: string) => void;
   addTenantAccount: (tenant: Omit<TenantAccount, 'id' | 'createdAt'>, adminPassword?: string) => void;
   updateTenantStatus: (id: string, status: 'Active' | 'Provisioning' | 'Suspended') => void;
+  updateTenantMenus: (id: string, enabledMenus: string[]) => void;
   deleteTenantAccount: (id: string) => void;
   switchTenantContext: (tenantId: string) => void;
   loginUser: (email: string, password: string) => { success: boolean; error?: string };
@@ -341,6 +368,28 @@ const defaultRooms: Room[] = [
   { id: 'r402', roomNumber: '402', category: 'Dormitory', floor: 4, price: 800, status: 'Available', restaurantCharges: 0, barCharges: 0, laundryCharges: 0, hallCharges: 0, otherCharges: 0 }
 ];
 
+const defaultInventory: InventoryItem[] = [
+  { id: 'inv_1', name: 'Basmati Rice 25kg Bag', category: 'Kitchen', stock: 8, minStock: 3, unit: 'bag', barcode: 'BAR-100201' },
+  { id: 'inv_2', name: 'Kingfisher Premium Beer 650ml', category: 'Liquor', stock: 36, minStock: 12, unit: 'bottle', barcode: 'BAR-100202' },
+  { id: 'inv_3', name: 'Premium Bath Towels', category: 'Housekeeping', stock: 45, minStock: 15, unit: 'pcs', barcode: 'BAR-100203' },
+  { id: 'inv_4', name: 'Bed Linen Standard Set', category: 'Room Supplies', stock: 28, minStock: 10, unit: 'set', barcode: 'BAR-100204' },
+  { id: 'inv_5', name: 'Toilet Cleaner & Disinfectant 5L', category: 'Cleaning', stock: 12, minStock: 4, unit: 'can', barcode: 'BAR-100205' },
+  { id: 'inv_6', name: 'Laundry Detergent Eco 10kg', category: 'Laundry', stock: 6, minStock: 2, unit: 'bag', barcode: 'BAR-100206' }
+];
+
+const defaultMenuItems: MenuItem[] = [
+  { id: 'm1', name: 'Continental Breakfast Platter', category: 'Breakfast', price: 350, isBar: false, isAvailable: true },
+  { id: 'm2', name: 'Paneer Butter Masala & Naan', category: 'Lunch', price: 420, isBar: false, isAvailable: true },
+  { id: 'm3', name: 'Chicken Biryani Special', category: 'Dinner', price: 480, isBar: false, isAvailable: true },
+  { id: 'm4', name: 'Fresh Lime Soda', category: 'Beverages', price: 120, isBar: false, isAvailable: true },
+  { id: 'm5', name: 'Chocolate Lava Cake', category: 'Desserts', price: 220, isBar: false, isAvailable: true },
+  { id: 'b1', name: 'Kingfisher Ultra Beer 650ml', category: 'Beer', price: 380, isBar: true, isAvailable: true },
+  { id: 'b2', name: 'Old Monk Dark Rum 60ml', category: 'Rum', price: 250, isBar: true, isAvailable: true },
+  { id: 'b3', name: 'Johnnie Walker Red Label 60ml', category: 'Whisky', price: 450, isBar: true, isAvailable: true },
+  { id: 'b4', name: 'Signature Mojito Cocktail', category: 'Cocktails', price: 400, isBar: true, isAvailable: true },
+  { id: 'b5', name: 'Crispy Chilli Chicken', category: 'Snacks', price: 340, isBar: true, isAvailable: true }
+];
+
 const defaultSettings: HotelSettings = {
   name: 'HotelVista Resort & Spa',
   address: '45, Hill View Road, Ooty, Tamil Nadu - 643001',
@@ -360,16 +409,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // Authentication states
   const [user, setUser] = useState<User | null>(null);
   const [loadingAuth, setLoadingAuth] = useState(true);
-  const [tenantId, setTenantId] = useState<string | null>(null);
+  const [tenantId, setTenantId] = useState<string | null>(() => {
+    return localStorage.getItem('hv_active_tenant_id') || 't_merridien';
+  });
 
   // Local ERP states, initialized to empty and filled via Firestore subscriptions
-  const [rooms, setRooms] = useState<Room[]>([]);
+  const [rooms, setRooms] = useState<Room[]>(defaultRooms);
   const [preBookings, setPreBookings] = useState<PreBooking[]>([]);
-  const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
+  const [menuItems, setMenuItems] = useState<MenuItem[]>(defaultMenuItems);
   const [orders, setOrders] = useState<Order[]>([]);
   const [laundryOrders, setLaundryOrders] = useState<LaundryOrder[]>([]);
   const [hallBookings, setHallBookings] = useState<HallBooking[]>([]);
-  const [inventory, setInventory] = useState<InventoryItem[]>([]);
+  const [inventory, setInventory] = useState<InventoryItem[]>(defaultInventory);
   const [purchaseLogs, setPurchaseLogs] = useState<PurchaseLog[]>([]);
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
@@ -393,7 +444,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
     const unsub = onAuthStateChanged(auth, (firebaseUser) => {
       setUser(firebaseUser);
-      setTenantId(firebaseUser ? firebaseUser.uid : null);
+      if (firebaseUser) {
+        setTenantId(firebaseUser.uid);
+      } else {
+        const savedTenant = localStorage.getItem('hv_active_tenant_id') || 't_merridien';
+        setTenantId(savedTenant);
+      }
       setLoadingAuth(false);
     });
     return unsub;
@@ -417,7 +473,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   
   // Settings sync
   useEffect(() => {
-    if (!tenantId) return;
+    if (!tenantId || !isFirebaseConfigured || !db) return;
     const unsub = onSnapshot(doc(db, 'tenants', tenantId, 'settings', 'hotel'), (snapshot) => {
       if (snapshot.exists()) {
         setSettings(snapshot.data() as HotelSettings);
@@ -430,7 +486,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Rooms sync
   useEffect(() => {
-    if (!tenantId) return;
+    if (!tenantId || !isFirebaseConfigured || !db) return;
     const unsub = onSnapshot(collection(db, 'tenants', tenantId, 'rooms'), (snapshot) => {
       if (snapshot.empty) {
         // Seed default rooms
@@ -450,7 +506,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Pre-Bookings sync
   useEffect(() => {
-    if (!tenantId) return;
+    if (!tenantId || !isFirebaseConfigured || !db) return;
     const unsub = onSnapshot(collection(db, 'tenants', tenantId, 'preBookings'), (snapshot) => {
       const data = snapshot.docs.map(doc => doc.data() as PreBooking);
       data.sort((a, b) => b.bookingDate.localeCompare(a.bookingDate));
@@ -461,17 +517,25 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Menu items sync
   useEffect(() => {
-    if (!tenantId) return;
+    if (!tenantId || !isFirebaseConfigured || !db) return;
     const unsub = onSnapshot(collection(db, 'tenants', tenantId, 'menuItems'), (snapshot) => {
-      const data = snapshot.docs.map(doc => doc.data() as MenuItem);
-      setMenuItems(data);
+      if (snapshot.empty) {
+        const batch = writeBatch(db);
+        defaultMenuItems.forEach(m => {
+          batch.set(doc(db, 'tenants', tenantId, 'menuItems', m.id), m);
+        });
+        batch.commit();
+      } else {
+        const data = snapshot.docs.map(doc => doc.data() as MenuItem);
+        setMenuItems(data);
+      }
     });
     return unsub;
   }, [tenantId]);
 
   // Orders sync
   useEffect(() => {
-    if (!tenantId) return;
+    if (!tenantId || !isFirebaseConfigured || !db) return;
     const unsub = onSnapshot(collection(db, 'tenants', tenantId, 'orders'), (snapshot) => {
       const data = snapshot.docs.map(doc => doc.data() as Order);
       data.sort((a, b) => b.timestamp.localeCompare(a.timestamp));
@@ -482,7 +546,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Laundry Orders sync
   useEffect(() => {
-    if (!tenantId) return;
+    if (!tenantId || !isFirebaseConfigured || !db) return;
     const unsub = onSnapshot(collection(db, 'tenants', tenantId, 'laundryOrders'), (snapshot) => {
       const data = snapshot.docs.map(doc => doc.data() as LaundryOrder);
       data.sort((a, b) => b.timestamp.localeCompare(a.timestamp));
@@ -493,7 +557,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Hall Bookings sync
   useEffect(() => {
-    if (!tenantId) return;
+    if (!tenantId || !isFirebaseConfigured || !db) return;
     const unsub = onSnapshot(collection(db, 'tenants', tenantId, 'hallBookings'), (snapshot) => {
       const data = snapshot.docs.map(doc => doc.data() as HallBooking);
       setHallBookings(data);
@@ -503,17 +567,25 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Inventory sync
   useEffect(() => {
-    if (!tenantId) return;
+    if (!tenantId || !isFirebaseConfigured || !db) return;
     const unsub = onSnapshot(collection(db, 'tenants', tenantId, 'inventory'), (snapshot) => {
-      const data = snapshot.docs.map(doc => doc.data() as InventoryItem);
-      setInventory(data);
+      if (snapshot.empty) {
+        const batch = writeBatch(db);
+        defaultInventory.forEach(inv => {
+          batch.set(doc(db, 'tenants', tenantId, 'inventory', inv.id), inv);
+        });
+        batch.commit();
+      } else {
+        const data = snapshot.docs.map(doc => doc.data() as InventoryItem);
+        setInventory(data);
+      }
     });
     return unsub;
   }, [tenantId]);
 
   // Purchase logs sync
   useEffect(() => {
-    if (!tenantId) return;
+    if (!tenantId || !isFirebaseConfigured || !db) return;
     const unsub = onSnapshot(collection(db, 'tenants', tenantId, 'purchaseLogs'), (snapshot) => {
       const data = snapshot.docs.map(doc => doc.data() as PurchaseLog);
       data.sort((a, b) => b.date.localeCompare(a.date));
@@ -524,7 +596,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Audit Logs sync
   useEffect(() => {
-    if (!tenantId) return;
+    if (!tenantId || !isFirebaseConfigured || !db) return;
     const unsub = onSnapshot(collection(db, 'tenants', tenantId, 'auditLogs'), (snapshot) => {
       if (snapshot.empty) {
         // Seed only a single system init audit log rather than mock guest records
@@ -549,7 +621,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Notifications sync
   useEffect(() => {
-    if (!tenantId) return;
+    if (!tenantId || !isFirebaseConfigured || !db) return;
     const unsub = onSnapshot(collection(db, 'tenants', tenantId, 'notifications'), (snapshot) => {
       const data = snapshot.docs.map(doc => doc.data() as AppNotification);
       data.sort((a, b) => b.timestamp.localeCompare(a.timestamp));
@@ -993,22 +1065,27 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // INVENTORY ITEMS
   const addInventoryItem = async (item: Omit<InventoryItem, 'id'>) => {
-    if (!tenantId) return;
+    const targetTenant = tenantId || activeTenantId || 't_merridien';
     const id = 'i_' + Date.now();
     const newItem: InventoryItem = {
       ...item,
       id
     };
+    // Optimistically add item to inventory state immediately
+    setInventory(prev => [newItem, ...prev.filter(i => i.id !== id)]);
+
     try {
-      await setDoc(doc(db, 'tenants', tenantId, 'inventory', id), newItem);
+      if (isFirebaseConfigured && db) {
+        await setDoc(doc(db, 'tenants', targetTenant, 'inventory', id), newItem);
+      }
       await addAudit('Add Stock Item', `Created inventory track for ${item.name}`);
     } catch (e) {
-      console.error(e);
+      console.error('Failed to save inventory item to Firestore:', e);
     }
   };
 
   const recordPurchase = async (purchase: Omit<PurchaseLog, 'id' | 'date'>) => {
-    if (!tenantId) return;
+    const targetTenant = tenantId || activeTenantId || 't_merridien';
     const id = 'p_' + Date.now();
     const newPurchase: PurchaseLog = {
       ...purchase,
@@ -1016,31 +1093,42 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       date: new Date().toISOString().split('T')[0]
     };
 
-    try {
-      const batch = writeBatch(db);
-
-      batch.set(doc(db, 'tenants', tenantId, 'purchaseLogs', id), newPurchase);
-
-      // Update stock levels
-      const itemMatch = inventory.find(item => item.name.toLowerCase() === purchase.itemName.toLowerCase());
-      if (itemMatch) {
-        const newStock = itemMatch.stock + purchase.quantity;
-        
-        batch.update(doc(db, 'tenants', tenantId, 'inventory', itemMatch.id), { stock: newStock });
-
-        // Remove low stock alert notification if stock rose above threshold
-        if (newStock >= itemMatch.minStock) {
-          const matchedNotifs = notifications.filter(n => n.message.includes(itemMatch.name));
-          matchedNotifs.forEach(n => {
-            batch.delete(doc(db, 'tenants', tenantId, 'notifications', n.id));
-          });
-        }
+    // Optimistically update purchaseLogs and inventory immediately
+    setPurchaseLogs(prev => [newPurchase, ...prev]);
+    setInventory(prev => prev.map(item => {
+      if (item.name.toLowerCase() === purchase.itemName.toLowerCase()) {
+        return { ...item, stock: item.stock + purchase.quantity };
       }
+      return item;
+    }));
 
-      await batch.commit();
+    try {
+      if (isFirebaseConfigured && db) {
+        const batch = writeBatch(db);
+
+        batch.set(doc(db, 'tenants', targetTenant, 'purchaseLogs', id), newPurchase);
+
+        // Update stock levels
+        const itemMatch = inventory.find(item => item.name.toLowerCase() === purchase.itemName.toLowerCase());
+        if (itemMatch) {
+          const newStock = itemMatch.stock + purchase.quantity;
+          
+          batch.update(doc(db, 'tenants', targetTenant, 'inventory', itemMatch.id), { stock: newStock });
+
+          // Remove low stock alert notification if stock rose above threshold
+          if (newStock >= itemMatch.minStock) {
+            const matchedNotifs = notifications.filter(n => n.message.includes(itemMatch.name));
+            matchedNotifs.forEach(n => {
+              batch.delete(doc(db, 'tenants', targetTenant, 'notifications', n.id));
+            });
+          }
+        }
+
+        await batch.commit();
+      }
       await addAudit('Stock Purchase', `Stock In: ${purchase.quantity} ${purchase.unit} of ${purchase.itemName} from ${purchase.supplier}`);
     } catch (e) {
-      console.error(e);
+      console.error('Failed to record purchase:', e);
     }
   };
 
@@ -1070,6 +1158,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   ]);
 
   const updateStockLevel = async (itemId: string, amount: number, direction: 'in' | 'out', category?: string, description?: string) => {
+    const targetTenant = tenantId || activeTenantId || 't_merridien';
     let adjustedItem: InventoryItem | undefined = inventory.find(i => i.id === itemId);
 
     setInventory(prev => prev.map(item => {
@@ -1081,35 +1170,35 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return item;
     }));
 
-    if (tenantId && adjustedItem) {
+    if (adjustedItem) {
       const change = direction === 'in' ? amount : -amount;
       const newStock = Math.max(0, adjustedItem.stock + change);
 
       try {
-        const batch = writeBatch(db);
+        if (isFirebaseConfigured && db) {
+          const batch = writeBatch(db);
 
-        batch.update(doc(db, 'tenants', tenantId, 'inventory', itemId), {
-          stock: parseFloat(newStock.toFixed(1))
-        });
+          batch.update(doc(db, 'tenants', targetTenant, 'inventory', itemId), {
+            stock: parseFloat(newStock.toFixed(1))
+          });
 
-        if (newStock < adjustedItem.minStock && adjustedItem.stock >= adjustedItem.minStock) {
-          const notifId = 'n_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5);
-          const newNotif: AppNotification = {
-            id: notifId,
-            type: 'stock',
-            message: `Low Stock Alert: ${adjustedItem.name} is below threshold (${newStock.toFixed(1)}${adjustedItem.unit} remaining, min ${adjustedItem.minStock}${adjustedItem.unit})`,
-            timestamp: new Date().toLocaleString(),
-            read: false
-          };
-          batch.set(doc(db, 'tenants', tenantId, 'notifications', notifId), newNotif);
+          if (newStock < adjustedItem.minStock && adjustedItem.stock >= adjustedItem.minStock) {
+            const notifId = 'n_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5);
+            const newNotif: AppNotification = {
+              id: notifId,
+              type: 'stock',
+              message: `Low Stock Alert: ${adjustedItem.name} is below threshold (${newStock.toFixed(1)}${adjustedItem.unit} remaining, min ${adjustedItem.minStock}${adjustedItem.unit})`,
+              timestamp: new Date().toLocaleString(),
+              read: false
+            };
+            batch.set(doc(db, 'tenants', targetTenant, 'notifications', notifId), newNotif);
+          }
+          await batch.commit();
         }
-        await batch.commit();
       } catch (e) {
-        console.error(e);
+        console.error('Failed to update stock in Firestore:', e);
       }
-    }
 
-    if (adjustedItem) {
       const itemCat = category || adjustedItem.category;
       const desc = description || (direction === 'in' ? 'Manual Stock In adjustment' : 'Manual Stock Out adjustment');
       const newLog: StockAdjustmentLog = {
@@ -1130,18 +1219,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const [userAccounts, setUserAccounts] = useState<ClientUserAccount[]>(() => {
-    const saved = localStorage.getItem('hv_user_accounts');
-    if (saved) {
-      try {
-        return JSON.parse(saved);
-      } catch (e) {}
-    }
-    return [
+    const defaultAccounts: ClientUserAccount[] = [
       {
         id: 'u_superadmin',
-        name: 'Super Admin (SaaS Owner)',
-        email: 'superadmin@hotelvista.com',
-        password: 'super123',
+        name: 'Super Admin',
+        email: 'superAdmin',
+        password: 'greenBridge',
         role: 'super_admin',
         tenantName: 'HotelVista Central SaaS',
         status: 'Active',
@@ -1178,17 +1261,23 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         createdAt: '2026-01-01'
       }
     ];
+
+    const saved = localStorage.getItem('hv_user_accounts');
+    if (saved) {
+      try {
+        const parsed: ClientUserAccount[] = JSON.parse(saved);
+        const filtered = parsed.filter(u => u.role !== 'super_admin' && u.id !== 'u_superadmin');
+        const updated = [defaultAccounts[0], ...filtered];
+        localStorage.setItem('hv_user_accounts', JSON.stringify(updated));
+        return updated;
+      } catch (e) {}
+    }
+    return defaultAccounts;
   });
 
   // MULTI-TENANT ACCOUNTS STATE
   const [tenants, setTenants] = useState<TenantAccount[]>(() => {
-    const saved = localStorage.getItem('hv_tenants');
-    if (saved) {
-      try {
-        return JSON.parse(saved);
-      } catch (e) {}
-    }
-    return [
+    const defaultList: TenantAccount[] = [
       {
         id: 't_merridien',
         slug: 'hotel-le-merridien',
@@ -1202,7 +1291,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         status: 'Active',
         createdAt: '2026-01-01',
         maxRooms: 150,
-        adminEmail: 'merridien@hotel.com'
+        adminEmail: 'merridien@hotel.com',
+        enabledMenus: DEFAULT_ENABLED_MENUS
       },
       {
         id: 't_main',
@@ -1217,7 +1307,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         status: 'Active',
         createdAt: '2026-01-01',
         maxRooms: 100,
-        adminEmail: 'admin@hotelvista.com'
+        adminEmail: 'admin@hotelvista.com',
+        enabledMenus: DEFAULT_ENABLED_MENUS
       },
       {
         id: 't_royal',
@@ -1232,20 +1323,53 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         status: 'Active',
         createdAt: '2026-02-10',
         maxRooms: 60,
-        adminEmail: 'royal@resort.com'
+        adminEmail: 'royal@resort.com',
+        enabledMenus: DEFAULT_ENABLED_MENUS
       }
     ];
+
+    const saved = localStorage.getItem('hv_tenants');
+    if (saved) {
+      try {
+        const parsed: TenantAccount[] = JSON.parse(saved);
+        return parsed.map(t => ({
+          ...t,
+          enabledMenus: t.enabledMenus && Array.isArray(t.enabledMenus) ? t.enabledMenus : DEFAULT_ENABLED_MENUS
+        }));
+      } catch (e) {}
+    }
+    return defaultList;
   });
 
   const [activeTenantId, setActiveTenantId] = useState<string>(() => {
     return localStorage.getItem('hv_active_tenant_id') || 't_merridien';
   });
 
+  const currentTenant: TenantAccount = tenants.find(t => t.id === activeTenantId) || tenants[0] || {
+    id: 't_merridien',
+    slug: 'hotel-le-merridien',
+    name: 'Hotel Le Merridien',
+    email: 'merridien@hotel.com',
+    phone: '+91 98765 11223',
+    gstNumber: '36AAACH1234M1Z5',
+    subdomain: 'merridien.hotelvista.com',
+    currency: 'INR (₹)',
+    tier: 'Enterprise Multi-Property',
+    status: 'Active',
+    createdAt: '2026-01-01',
+    maxRooms: 150,
+    adminEmail: 'merridien@hotel.com',
+    enabledMenus: DEFAULT_ENABLED_MENUS
+  };
+
   const addTenantAccount = (tenantData: Omit<TenantAccount, 'id' | 'createdAt'>, adminPassword?: string) => {
     const newTenant: TenantAccount = {
       ...tenantData,
       id: 't_' + Date.now(),
-      createdAt: new Date().toISOString().split('T')[0]
+      createdAt: new Date().toISOString().split('T')[0],
+      enabledMenus: tenantData.enabledMenus && Array.isArray(tenantData.enabledMenus) 
+        ? tenantData.enabledMenus 
+        : DEFAULT_ENABLED_MENUS
     };
     const updatedTenants = [newTenant, ...tenants];
     setTenants(updatedTenants);
@@ -1282,6 +1406,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     addAudit('Tenant Status Updated', `Updated tenant ${id} status to ${status}`);
   };
 
+  const updateTenantMenus = (id: string, enabledMenus: string[]) => {
+    const updated = tenants.map(t => t.id === id ? { ...t, enabledMenus } : t);
+    setTenants(updated);
+    localStorage.setItem('hv_tenants', JSON.stringify(updated));
+    const targetTenant = tenants.find(t => t.id === id);
+    const tenantName = targetTenant ? targetTenant.name : id;
+    addAudit('Tenant Menus Updated', `Super Admin updated module access for property "${tenantName}": ${enabledMenus.length} modules enabled.`);
+  };
+
   const deleteTenantAccount = (id: string) => {
     const updated = tenants.filter(t => t.id !== id);
     setTenants(updated);
@@ -1289,11 +1422,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     addAudit('Tenant Deleted', `Deleted tenant account ${id}`);
   };
 
-  const switchTenantContext = (tenantId: string) => {
-    const matched = tenants.find(t => t.id === tenantId);
+  const switchTenantContext = (newTenantId: string) => {
+    const matched = tenants.find(t => t.id === newTenantId);
     if (matched) {
-      setActiveTenantId(tenantId);
-      localStorage.setItem('hv_active_tenant_id', tenantId);
+      setActiveTenantId(newTenantId);
+      setTenantId(newTenantId);
+      localStorage.setItem('hv_active_tenant_id', newTenantId);
       addAudit('Tenant Context Switch', `Super Admin switched view context to tenant "${matched.name}"`);
     }
   };
@@ -1336,23 +1470,31 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   });
 
   const loginUser = (emailInput: string, passwordInput: string) => {
-    const cleanEmail = emailInput.trim().toLowerCase();
+    const cleanInput = emailInput.trim().toLowerCase();
     const cleanPassword = passwordInput.trim();
 
-    const matched = userAccounts.find(u => 
-      u.email.toLowerCase() === cleanEmail && u.password === cleanPassword
-    );
+    const matched = userAccounts.find(u => {
+      const matchEmail = u.email.toLowerCase() === cleanInput;
+      const matchName = u.name.toLowerCase() === cleanInput;
+      const matchSuper = (cleanInput === 'superadmin' || cleanInput === 'super_admin') && u.role === 'super_admin';
+      return (matchEmail || matchName || matchSuper) && u.password === cleanPassword;
+    });
 
     if (matched) {
       setCurrentUser(matched);
       setUserRole(matched.role);
+      const tenantMatch = tenants.find(t => t.name.toLowerCase() === (matched.tenantName || '').toLowerCase()) || tenants[0];
+      const targetTId = tenantMatch ? tenantMatch.id : 't_merridien';
+      setActiveTenantId(targetTId);
+      setTenantId(targetTId);
+      localStorage.setItem('hv_active_tenant_id', targetTId);
       localStorage.setItem('hv_current_user', JSON.stringify(matched));
       localStorage.setItem('hv_user_role', matched.role);
       addAudit('User Login', `User ${matched.email} (${matched.name}) logged in successfully as ${matched.role}`);
       return { success: true };
     }
 
-    return { success: false, error: 'Invalid Email ID or Password. Please check your credentials.' };
+    return { success: false, error: 'Invalid Username/Email or Password. Please check your credentials.' };
   };
 
   const logoutUser = () => {
@@ -1598,8 +1740,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       deleteUserAccount,
       tenants,
       activeTenantId,
+      currentTenant,
       addTenantAccount,
       updateTenantStatus,
+      updateTenantMenus,
       deleteTenantAccount,
       switchTenantContext,
       currentUser,

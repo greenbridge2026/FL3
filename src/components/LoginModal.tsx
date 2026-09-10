@@ -97,11 +97,11 @@ export const LoginModal: React.FC<LoginModalProps> = ({ isOpen, onClose }) => {
             <div className="relative">
               <Mail className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
               <input
-                type="email"
+                type="text"
                 required
                 value={email}
                 onChange={e => setEmail(e.target.value)}
-                placeholder="merridien@hotel.com"
+                placeholder="superAdmin or merridien@hotel.com"
                 className="w-full pl-9 pr-3 py-2.5 border dark:border-slate-800 dark:bg-slate-950 rounded-xl font-mono text-xs focus:ring-2 focus:ring-indigo-500 focus:outline-none"
               />
             </div>
@@ -134,35 +134,9 @@ export const LoginModal: React.FC<LoginModalProps> = ({ isOpen, onClose }) => {
             className="w-full py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl shadow-md shadow-indigo-500/20 text-xs transition-all flex items-center justify-center gap-2"
           >
             <LogIn className="w-4 h-4" />
-            <span>Sign In to Client Account</span>
+            <span>Sign In to Account</span>
           </button>
         </form>
-
-        {/* Quick Demo Fill Accounts List */}
-        <div className="space-y-2.5 pt-4 border-t border-slate-100 dark:border-slate-800">
-          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
-            One-Click Quick Login Accounts
-          </span>
-
-          <div className="space-y-1.5 max-h-[140px] overflow-y-auto pr-1">
-            {userAccounts.map(acc => (
-              <button
-                key={acc.id}
-                type="button"
-                onClick={() => handleQuickFill(acc.email, acc.password)}
-                className="w-full p-2 text-left rounded-xl border border-slate-200/60 dark:border-slate-800 hover:border-indigo-500/40 bg-slate-50 dark:bg-slate-950 hover:bg-indigo-50/50 dark:hover:bg-indigo-950/30 transition-all flex items-center justify-between text-xs"
-              >
-                <div>
-                  <p className="font-bold text-slate-800 dark:text-slate-200 text-[11px]">{acc.name}</p>
-                  <p className="text-[10px] font-mono text-indigo-600 dark:text-indigo-400">{acc.email} / {acc.password}</p>
-                </div>
-                <span className="text-[9px] px-2 py-0.5 bg-slate-200 dark:bg-slate-800 rounded font-semibold text-slate-600 dark:text-slate-300">
-                  Fill
-                </span>
-              </button>
-            ))}
-          </div>
-        </div>
 
       </div>
 

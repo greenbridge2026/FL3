@@ -1,5 +1,12 @@
 import React, { useState } from 'react';
-import { useApp, TenantAccount, UserRole } from '../context/AppContext';
+import { 
+  useApp, 
+  TenantAccount, 
+  UserRole, 
+  ALL_TENANT_MENUS, 
+  DEFAULT_ENABLED_MENUS, 
+  TenantMenuDefinition 
+} from '../context/AppContext';
 import { 
   Building2, 
   Plus, 
@@ -18,14 +25,49 @@ import {
   Server, 
   Crown,
   UserPlus,
-  RefreshCw
+  RefreshCw,
+  SlidersHorizontal,
+  LayoutGrid,
+  Check,
+  LayoutDashboard,
+  BedDouble,
+  CalendarDays,
+  UtensilsCrossed,
+  Wine,
+  Shirt,
+  PartyPopper,
+  Package,
+  Receipt,
+  BarChart3,
+  Settings,
+  History,
+  Sparkles,
+  ToggleLeft,
+  ToggleRight,
+  Filter
 } from 'lucide-react';
+
+const MENU_ICONS: Record<string, React.ElementType> = {
+  dashboard: LayoutDashboard,
+  rooms: BedDouble,
+  prebookings: CalendarDays,
+  restaurant: UtensilsCrossed,
+  bar: Wine,
+  laundry: Shirt,
+  hall: PartyPopper,
+  stock: Package,
+  billing: Receipt,
+  reports: BarChart3,
+  settings: Settings,
+  audit: History,
+};
 
 export const SuperAdminView: React.FC = () => {
   const { 
     tenants, 
     addTenantAccount, 
     updateTenantStatus, 
+    updateTenantMenus,
     deleteTenantAccount, 
     userAccounts, 
     addUserAccount, 
@@ -42,6 +84,11 @@ export const SuperAdminView: React.FC = () => {
   // Modal States
   const [showAddTenantModal, setShowAddTenantModal] = useState(false);
   const [showAddUserModal, setShowAddUserModal] = useState(false);
+  const [selectedTenantForMenus, setSelectedTenantForMenus] = useState<TenantAccount | null>(null);
+  const [tempEnabledMenus, setTempEnabledMenus] = useState<string[]>([]);
+  const [menuSearch, setMenuSearch] = useState('');
+  const [menuFilterCategory, setMenuFilterCategory] = useState('All');
+  const [menuSaveSuccess, setMenuSaveSuccess] = useState(false);
 
   // New Tenant Form State
   const [tenantName, setTenantName] = useState('');
@@ -53,6 +100,55 @@ export const SuperAdminView: React.FC = () => {
   const [tenantTier, setTenantTier] = useState<'Boutique' | 'Standard ERP' | 'Enterprise Multi-Property'>('Enterprise Multi-Property');
   const [maxRooms, setMaxRooms] = useState(100);
   const [adminPassword, setAdminPassword] = useState('tenant123');
+  const [onboardingMenus, setOnboardingMenus] = useState<string[]>(DEFAULT_ENABLED_MENUS);
+
+  // Open Menu Control Modal for a tenant
+  const openMenuControlModal = (tenant: TenantAccount) => {
+    setSelectedTenantForMenus(tenant);
+    setTempEnabledMenus(
+      tenant.enabledMenus && Array.isArray(tenant.enabledMenus) 
+        ? [...tenant.enabledMenus] 
+        : [...DEFAULT_ENABLED_MENUS]
+    );
+    setMenuSearch('');
+    setMenuFilterCategory('All');
+    setMenuSaveSuccess(false);
+  };
+
+  // Toggle a single menu for modal
+  const handleToggleMenu = (menuId: string) => {
+    setTempEnabledMenus(prev => 
+      prev.includes(menuId) 
+        ? prev.filter(id => id !== menuId) 
+        : [...prev, menuId]
+    );
+  };
+
+  // Preset Handlers
+  const handleApplyPreset = (presetType: 'all' | 'none' | 'boutique' | 'standard' | 'resort') => {
+    if (presetType === 'all') {
+      setTempEnabledMenus(ALL_TENANT_MENUS.map(m => m.id));
+    } else if (presetType === 'none') {
+      setTempEnabledMenus([]);
+    } else if (presetType === 'boutique') {
+      setTempEnabledMenus(['dashboard', 'rooms', 'prebookings', 'laundry', 'billing', 'reports', 'settings']);
+    } else if (presetType === 'standard') {
+      setTempEnabledMenus(['dashboard', 'rooms', 'prebookings', 'restaurant', 'laundry', 'stock', 'billing', 'reports', 'settings', 'audit']);
+    } else if (presetType === 'resort') {
+      setTempEnabledMenus(DEFAULT_ENABLED_MENUS);
+    }
+  };
+
+  // Save Menus to AppContext & Tenant
+  const handleSaveMenus = () => {
+    if (!selectedTenantForMenus) return;
+    updateTenantMenus(selectedTenantForMenus.id, tempEnabledMenus);
+    setMenuSaveSuccess(true);
+    setTimeout(() => {
+      setMenuSaveSuccess(false);
+      setSelectedTenantForMenus(null);
+    }, 800);
+  };
 
   // New User Account Form State
   const [userName, setUserName] = useState('');
@@ -80,7 +176,8 @@ export const SuperAdminView: React.FC = () => {
       tier: tenantTier,
       status: 'Active',
       maxRooms: Number(maxRooms) || 100,
-      adminEmail: tenantEmail
+      adminEmail: tenantEmail,
+      enabledMenus: onboardingMenus
     }, adminPassword);
 
     // Reset Form
@@ -91,6 +188,7 @@ export const SuperAdminView: React.FC = () => {
     setTenantGst('');
     setTenantSubdomain('');
     setAdminPassword('tenant123');
+    setOnboardingMenus(DEFAULT_ENABLED_MENUS);
     setShowAddTenantModal(false);
   };
 
@@ -271,6 +369,7 @@ export const SuperAdminView: React.FC = () => {
                 <th className="py-3 px-4">Contact Admin</th>
                 <th className="py-3 px-4">Subscription Tier</th>
                 <th className="py-3 px-4">Room Limit</th>
+                <th className="py-3 px-4">Enabled Menus</th>
                 <th className="py-3 px-4">Status</th>
                 <th className="py-3 px-4">Created Date</th>
                 <th className="py-3 px-4 text-right">Actions</th>
@@ -279,109 +378,142 @@ export const SuperAdminView: React.FC = () => {
             <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60 font-medium">
               {filteredTenants.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="py-8 text-center text-slate-400">
+                  <td colSpan={8} className="py-8 text-center text-slate-400">
                     No matching multi-tenant accounts found.
                   </td>
                 </tr>
               ) : (
-                filteredTenants.map(tenant => (
-                  <tr key={tenant.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/30 transition-colors">
-                    
-                    <td className="py-3.5 px-4">
-                      <div>
-                        <p className="font-bold text-slate-900 dark:text-slate-100 text-sm">{tenant.name}</p>
-                        <div className="flex items-center gap-2 mt-0.5">
-                          <Globe className="w-3 h-3 text-indigo-500" />
-                          <span className="text-[11px] font-mono text-indigo-600 dark:text-indigo-400">{tenant.subdomain}</span>
+                filteredTenants.map(tenant => {
+                  const activeCount = (tenant.enabledMenus && Array.isArray(tenant.enabledMenus)) 
+                    ? tenant.enabledMenus.length 
+                    : ALL_TENANT_MENUS.length;
+                  const isAll = activeCount === ALL_TENANT_MENUS.length;
+
+                  return (
+                    <tr key={tenant.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/30 transition-colors">
+                      
+                      <td className="py-3.5 px-4">
+                        <div>
+                          <p className="font-bold text-slate-900 dark:text-slate-100 text-sm">{tenant.name}</p>
+                          <div className="flex items-center gap-2 mt-0.5">
+                            <Globe className="w-3 h-3 text-indigo-500" />
+                            <span className="text-[11px] font-mono text-indigo-600 dark:text-indigo-400">{tenant.subdomain}</span>
+                          </div>
                         </div>
-                      </div>
-                    </td>
+                      </td>
 
-                    <td className="py-3.5 px-4">
-                      <div>
-                        <p className="font-bold text-slate-800 dark:text-slate-200">{tenant.email}</p>
-                        <p className="text-[10px] text-slate-400 font-mono">{tenant.phone}</p>
-                      </div>
-                    </td>
+                      <td className="py-3.5 px-4">
+                        <div>
+                          <p className="font-bold text-slate-800 dark:text-slate-200">{tenant.email}</p>
+                          <p className="text-[10px] text-slate-400 font-mono">{tenant.phone}</p>
+                        </div>
+                      </td>
 
-                    <td className="py-3.5 px-4">
-                      <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-extrabold bg-violet-50 dark:bg-violet-950/40 text-violet-600 dark:text-violet-300 border border-violet-500/20">
-                        <Crown className="w-3 h-3" />
-                        {tenant.tier}
-                      </span>
-                    </td>
-
-                    <td className="py-3.5 px-4">
-                      <span className="font-mono text-xs font-bold text-slate-700 dark:text-slate-300">
-                        {tenant.maxRooms || 100} Rooms
-                      </span>
-                    </td>
-
-                    <td className="py-3.5 px-4">
-                      {tenant.status === 'Active' && (
-                        <span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 flex items-center gap-1 w-max">
-                          <CheckCircle2 className="w-3 h-3" /> Active
+                      <td className="py-3.5 px-4">
+                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-extrabold bg-violet-50 dark:bg-violet-950/40 text-violet-600 dark:text-violet-300 border border-violet-500/20">
+                          <Crown className="w-3 h-3" />
+                          {tenant.tier}
                         </span>
-                      )}
-                      {tenant.status === 'Provisioning' && (
-                        <span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400 border border-amber-500/20 flex items-center gap-1 w-max">
-                          <RefreshCw className="w-3 h-3 animate-spin" /> Provisioning
+                      </td>
+
+                      <td className="py-3.5 px-4">
+                        <span className="font-mono text-xs font-bold text-slate-700 dark:text-slate-300">
+                          {tenant.maxRooms || 100} Rooms
                         </span>
-                      )}
-                      {tenant.status === 'Suspended' && (
-                        <span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 border border-rose-500/20 flex items-center gap-1 w-max">
-                          <AlertTriangle className="w-3 h-3" /> Suspended
-                        </span>
-                      )}
-                    </td>
+                      </td>
 
-                    <td className="py-3.5 px-4 font-mono text-[11px] text-slate-400">
-                      {tenant.createdAt}
-                    </td>
-
-                    <td className="py-3.5 px-4 text-right">
-                      <div className="flex items-center justify-end gap-2">
-                        
-                        {/* Impersonate / Launch Tenant View */}
+                      {/* Enabled Menus & Module Control */}
+                      <td className="py-3.5 px-4">
                         <button
-                          onClick={() => {
-                            switchTenantContext(tenant.id);
-                            switchRole('admin');
-                          }}
-                          className="px-2.5 py-1.5 bg-indigo-50 dark:bg-indigo-950/40 hover:bg-indigo-600 hover:text-white text-indigo-600 dark:text-indigo-400 font-bold rounded-lg text-[10px] transition-all flex items-center gap-1"
-                          title="Impersonate & View Tenant ERP Dashboard"
+                          onClick={() => openMenuControlModal(tenant)}
+                          className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-bold transition-all border group ${
+                            isAll 
+                              ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border-emerald-500/30 hover:bg-emerald-100 dark:hover:bg-emerald-900/50' 
+                              : 'bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 border-indigo-500/30 hover:bg-indigo-100 dark:hover:bg-indigo-900/50'
+                          }`}
+                          title="Click to enable or disable client account menus"
                         >
-                          <ExternalLink className="w-3 h-3" />
-                          <span>View ERP</span>
+                          <SlidersHorizontal className="w-3.5 h-3.5 transition-transform group-hover:rotate-45" />
+                          <span>{activeCount} / {ALL_TENANT_MENUS.length} Menus Active</span>
                         </button>
+                      </td>
 
-                        {/* Status Toggle */}
-                        <button
-                          onClick={() => updateTenantStatus(tenant.id, tenant.status === 'Active' ? 'Suspended' : 'Active')}
-                          className="px-2 py-1.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-700 dark:text-slate-300 font-bold rounded-lg text-[10px] transition-all"
-                          title="Toggle Tenant Account Status"
-                        >
-                          {tenant.status === 'Active' ? 'Suspend' : 'Activate'}
-                        </button>
+                      <td className="py-3.5 px-4">
+                        {tenant.status === 'Active' && (
+                          <span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 flex items-center gap-1 w-max">
+                            <CheckCircle2 className="w-3 h-3" /> Active
+                          </span>
+                        )}
+                        {tenant.status === 'Provisioning' && (
+                          <span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400 border border-amber-500/20 flex items-center gap-1 w-max">
+                            <RefreshCw className="w-3 h-3 animate-spin" /> Provisioning
+                          </span>
+                        )}
+                        {tenant.status === 'Suspended' && (
+                          <span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 border border-rose-500/20 flex items-center gap-1 w-max">
+                            <AlertTriangle className="w-3 h-3" /> Suspended
+                          </span>
+                        )}
+                      </td>
 
-                        {/* Delete Tenant */}
-                        <button
-                          onClick={() => {
-                            if (confirm(`Are you sure you want to delete multi-tenant account "${tenant.name}"?`)) {
-                              deleteTenantAccount(tenant.id);
-                            }
-                          }}
-                          className="p-1.5 text-slate-400 hover:text-rose-500 transition-colors"
-                          title="Delete Tenant Account"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
+                      <td className="py-3.5 px-4 font-mono text-[11px] text-slate-400">
+                        {tenant.createdAt}
+                      </td>
 
-                      </div>
-                    </td>
+                      <td className="py-3.5 px-4 text-right">
+                        <div className="flex items-center justify-end gap-2">
+                          
+                          {/* Menu Control Option Button */}
+                          <button
+                            onClick={() => openMenuControlModal(tenant)}
+                            className="px-2.5 py-1.5 bg-amber-50 dark:bg-amber-950/40 hover:bg-amber-500 hover:text-white text-amber-700 dark:text-amber-300 font-bold rounded-lg text-[10px] transition-all flex items-center gap-1 border border-amber-500/20"
+                            title="Configure Menus & Modules for this client"
+                          >
+                            <SlidersHorizontal className="w-3 h-3" />
+                            <span>Menus</span>
+                          </button>
 
-                  </tr>
-                ))
+                          {/* Impersonate / Launch Tenant View */}
+                          <button
+                            onClick={() => {
+                              switchTenantContext(tenant.id);
+                              switchRole('admin');
+                            }}
+                            className="px-2.5 py-1.5 bg-indigo-50 dark:bg-indigo-950/40 hover:bg-indigo-600 hover:text-white text-indigo-600 dark:text-indigo-400 font-bold rounded-lg text-[10px] transition-all flex items-center gap-1"
+                            title="Impersonate & View Tenant ERP Dashboard"
+                          >
+                            <ExternalLink className="w-3 h-3" />
+                            <span>View ERP</span>
+                          </button>
+
+                          {/* Status Toggle */}
+                          <button
+                            onClick={() => updateTenantStatus(tenant.id, tenant.status === 'Active' ? 'Suspended' : 'Active')}
+                            className="px-2 py-1.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-700 dark:text-slate-300 font-bold rounded-lg text-[10px] transition-all"
+                            title="Toggle Tenant Account Status"
+                          >
+                            {tenant.status === 'Active' ? 'Suspend' : 'Activate'}
+                          </button>
+
+                          {/* Delete Tenant */}
+                          <button
+                            onClick={() => {
+                              if (confirm(`Are you sure you want to delete multi-tenant account "${tenant.name}"?`)) {
+                                deleteTenantAccount(tenant.id);
+                              }
+                            }}
+                            className="p-1.5 text-slate-400 hover:text-rose-500 transition-colors"
+                            title="Delete Tenant Account"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+
+                        </div>
+                      </td>
+
+                    </tr>
+                  );
+                })
               )}
             </tbody>
           </table>
@@ -457,10 +589,233 @@ export const SuperAdminView: React.FC = () => {
 
       </div>
 
+      {/* MANAGE CLIENT ACCOUNT MENUS MODAL */}
+      {selectedTenantForMenus && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-in fade-in duration-200">
+          <div className="w-full max-w-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+            
+            {/* Modal Header */}
+            <div className="p-6 bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white border-b border-indigo-500/20 relative">
+              <div className="flex items-start justify-between">
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <span className="px-2.5 py-0.5 bg-indigo-500/30 border border-indigo-400/30 text-indigo-200 text-[10px] font-black uppercase rounded-full tracking-wider flex items-center gap-1">
+                      <SlidersHorizontal className="w-3 h-3" /> Menu Access Control
+                    </span>
+                    <span className="text-xs text-slate-400 font-mono">{selectedTenantForMenus.subdomain}</span>
+                  </div>
+                  <h3 className="text-xl font-black tracking-tight text-white flex items-center gap-2">
+                    <span>{selectedTenantForMenus.name}</span>
+                  </h3>
+                  <p className="text-xs text-slate-300">
+                    Enable or disable specific ERP navigation menus and functional modules for this client account.
+                  </p>
+                </div>
+
+                <button
+                  onClick={() => setSelectedTenantForMenus(null)}
+                  className="w-8 h-8 rounded-full bg-slate-800 hover:bg-slate-700 text-slate-300 flex items-center justify-center text-sm font-bold transition-all"
+                >
+                  ✕
+                </button>
+              </div>
+
+              {/* Status Bar */}
+              <div className="mt-4 pt-3 border-t border-slate-800 flex flex-wrap items-center justify-between gap-3 text-xs">
+                <div className="flex items-center gap-2">
+                  <span className="font-bold text-slate-300">Active Modules:</span>
+                  <span className="px-2.5 py-0.5 rounded-full bg-emerald-500/20 border border-emerald-500/30 text-emerald-400 font-mono font-bold">
+                    {tempEnabledMenus.length} of {ALL_TENANT_MENUS.length} Enabled
+                  </span>
+                </div>
+                
+                {menuSaveSuccess && (
+                  <div className="flex items-center gap-1.5 text-emerald-400 font-bold animate-in fade-in">
+                    <CheckCircle2 className="w-4 h-4" />
+                    <span>Configuration Saved Successfully!</span>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Modal Controls & Presets */}
+            <div className="p-4 bg-slate-50 dark:bg-slate-950/60 border-b border-slate-200/80 dark:border-slate-800 space-y-3">
+              {/* Presets Row */}
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 flex items-center gap-1">
+                  <Sparkles className="w-3 h-3 text-amber-500" /> Quick Presets:
+                </span>
+                
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => handleApplyPreset('all')}
+                    className="px-2.5 py-1 bg-white dark:bg-slate-800 hover:bg-indigo-50 dark:hover:bg-indigo-950 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 rounded-lg text-[11px] font-bold transition-all"
+                  >
+                    Enable All (12)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleApplyPreset('none')}
+                    className="px-2.5 py-1 bg-white dark:bg-slate-800 hover:bg-rose-50 dark:hover:bg-rose-950 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 rounded-lg text-[11px] font-bold transition-all"
+                  >
+                    Disable All
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleApplyPreset('boutique')}
+                    className="px-2.5 py-1 bg-white dark:bg-slate-800 hover:bg-violet-50 dark:hover:bg-violet-950 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 rounded-lg text-[11px] font-bold transition-all"
+                  >
+                    Boutique Hotel (7)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleApplyPreset('standard')}
+                    className="px-2.5 py-1 bg-white dark:bg-slate-800 hover:bg-emerald-50 dark:hover:bg-emerald-950 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 rounded-lg text-[11px] font-bold transition-all"
+                  >
+                    Standard ERP (10)
+                  </button>
+                </div>
+              </div>
+
+              {/* Search & Category Filter */}
+              <div className="flex flex-col sm:flex-row items-center gap-2">
+                <div className="relative flex-1 w-full">
+                  <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-2.5" />
+                  <input
+                    type="text"
+                    placeholder="Filter menus by name or description..."
+                    value={menuSearch}
+                    onChange={e => setMenuSearch(e.target.value)}
+                    className="w-full pl-8 pr-3 py-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-xs focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                  />
+                </div>
+
+                <div className="flex items-center gap-1 overflow-x-auto w-full sm:w-auto py-1">
+                  {['All', 'Operations', 'F&B', 'Services', 'Events', 'Finance'].map(cat => (
+                    <button
+                      key={cat}
+                      type="button"
+                      onClick={() => setMenuFilterCategory(cat)}
+                      className={`px-2.5 py-1 rounded-lg text-[10px] font-bold whitespace-nowrap transition-all ${
+                        menuFilterCategory === cat
+                          ? 'bg-indigo-600 text-white shadow-sm'
+                          : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700'
+                      }`}
+                    >
+                      {cat}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            {/* Modules List */}
+            <div className="flex-1 overflow-y-auto p-4 space-y-2.5 divide-y divide-slate-100 dark:divide-slate-800/60">
+              {ALL_TENANT_MENUS
+                .filter(menu => {
+                  const matchSearch = menu.label.toLowerCase().includes(menuSearch.toLowerCase()) || 
+                                      menu.description.toLowerCase().includes(menuSearch.toLowerCase());
+                  const matchCat = menuFilterCategory === 'All' || menu.category === menuFilterCategory;
+                  return matchSearch && matchCat;
+                })
+                .map(menu => {
+                  const isEnabled = tempEnabledMenus.includes(menu.id);
+                  const MenuIcon = MENU_ICONS[menu.id] || LayoutDashboard;
+
+                  return (
+                    <div
+                      key={menu.id}
+                      onClick={() => handleToggleMenu(menu.id)}
+                      className={`pt-2.5 first:pt-0 flex items-center justify-between p-3.5 rounded-2xl cursor-pointer border transition-all ${
+                        isEnabled
+                          ? 'bg-indigo-50/50 dark:bg-indigo-950/20 border-indigo-500/30 hover:border-indigo-500/50 shadow-sm'
+                          : 'bg-slate-50/50 dark:bg-slate-900/40 border-slate-200 dark:border-slate-800/60 hover:border-slate-300 opacity-60'
+                      }`}
+                    >
+                      <div className="flex items-start gap-3.5">
+                        <div className={`p-2.5 rounded-xl transition-colors ${
+                          isEnabled 
+                            ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/20' 
+                            : 'bg-slate-200 dark:bg-slate-800 text-slate-500'
+                        }`}>
+                          <MenuIcon className="w-4 h-4" />
+                        </div>
+                        
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm font-black text-slate-900 dark:text-white">
+                              {menu.label}
+                            </span>
+                            <span className={`px-2 py-0.5 rounded-full text-[9px] font-extrabold uppercase tracking-wider ${
+                              isEnabled 
+                                ? 'bg-indigo-100 dark:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300' 
+                                : 'bg-slate-200 dark:bg-slate-800 text-slate-500'
+                            }`}>
+                              {menu.category}
+                            </span>
+                            {isEnabled ? (
+                              <span className="px-1.5 py-0.2 rounded text-[9px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40">
+                                Enabled
+                              </span>
+                            ) : (
+                              <span className="px-1.5 py-0.2 rounded text-[9px] font-bold text-slate-400 bg-slate-100 dark:bg-slate-800">
+                                Disabled
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                            {menu.description}
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* Interactive Switch UI */}
+                      <div className="ml-4 flex items-center">
+                        <div className={`w-12 h-6 flex items-center rounded-full p-1 duration-300 cursor-pointer ${
+                          isEnabled ? 'bg-indigo-600 justify-end' : 'bg-slate-300 dark:bg-slate-700 justify-start'
+                        }`}>
+                          <div className="bg-white w-4 h-4 rounded-full shadow-md transform transition-transform" />
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+            </div>
+
+            {/* Modal Footer Actions */}
+            <div className="p-4 bg-slate-50 dark:bg-slate-950 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between">
+              <div className="text-xs text-slate-500 font-medium">
+                Changes take effect immediately for staff under <strong className="text-slate-900 dark:text-white">{selectedTenantForMenus.name}</strong>.
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setSelectedTenantForMenus(null)}
+                  className="px-4 py-2.5 text-xs font-bold text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-800 rounded-xl transition-all"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSaveMenus}
+                  className="px-6 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs rounded-xl shadow-lg shadow-indigo-600/30 flex items-center gap-2 transition-all transform active:scale-95"
+                >
+                  <Check className="w-4 h-4" />
+                  <span>Save Menu Access ({tempEnabledMenus.length} Active)</span>
+                </button>
+              </div>
+            </div>
+
+          </div>
+        </div>
+      )}
+
       {/* CREATE NEW TENANT MODAL */}
       {showAddTenantModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/80 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="w-full max-w-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl shadow-2xl overflow-hidden p-6 space-y-5">
+          <div className="w-full max-w-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl shadow-2xl overflow-hidden p-6 space-y-5 max-h-[90vh] overflow-y-auto">
             
             <div className="flex items-center justify-between border-b pb-3 border-slate-100 dark:border-slate-800">
               <div className="flex items-center gap-3">
@@ -578,6 +933,60 @@ export const SuperAdminView: React.FC = () => {
                     onChange={e => setMaxRooms(Number(e.target.value))}
                     className="w-full px-3 py-2 border dark:border-slate-800 dark:bg-slate-950 rounded-xl font-mono focus:ring-2 focus:ring-indigo-500 focus:outline-none"
                   />
+                </div>
+              </div>
+
+              {/* Initial Menu Access Selection */}
+              <div className="p-3 bg-slate-50 dark:bg-slate-950/60 rounded-2xl border border-slate-200 dark:border-slate-800 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-slate-700 dark:text-slate-300">
+                    Initial Menu Access ({onboardingMenus.length} of {ALL_TENANT_MENUS.length} Active)
+                  </span>
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() => setOnboardingMenus(ALL_TENANT_MENUS.map(m => m.id))}
+                      className="text-[10px] text-indigo-600 font-bold hover:underline"
+                    >
+                      All
+                    </button>
+                    <span className="text-slate-300">|</span>
+                    <button
+                      type="button"
+                      onClick={() => setOnboardingMenus([])}
+                      className="text-[10px] text-rose-500 font-bold hover:underline"
+                    >
+                      None
+                    </button>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-1.5 max-h-36 overflow-y-auto p-1">
+                  {ALL_TENANT_MENUS.map(m => {
+                    const checked = onboardingMenus.includes(m.id);
+                    return (
+                      <label
+                        key={m.id}
+                        className={`flex items-center gap-2 p-1.5 rounded-lg border text-[11px] font-semibold cursor-pointer transition-colors ${
+                          checked
+                            ? 'bg-indigo-50 dark:bg-indigo-950/40 border-indigo-500/30 text-indigo-700 dark:text-indigo-300'
+                            : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-500'
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() => {
+                            setOnboardingMenus(prev =>
+                              prev.includes(m.id) ? prev.filter(x => x !== m.id) : [...prev, m.id]
+                            );
+                          }}
+                          className="rounded text-indigo-600"
+                        />
+                        <span className="truncate">{m.label}</span>
+                      </label>
+                    );
+                  })}
                 </div>
               </div>
 

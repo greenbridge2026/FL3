@@ -18,7 +18,7 @@ import { AuditLogView } from './views/AuditLogView';
 import { Auth } from './components/Auth';
 
 const AppContent: React.FC = () => {
-  const { userRole, currentUser, user, loadingAuth } = useApp();
+  const { userRole, currentUser, user, loadingAuth, currentTenant } = useApp();
   
   // Read initial tab from location hash or localStorage to persist on reload
   const [currentTab, setCurrentTab] = useState(() => {
@@ -52,7 +52,7 @@ const AppContent: React.FC = () => {
     return () => window.removeEventListener('hashchange', handleHashChange);
   }, [currentTab]);
 
-  // Role Tab Authorization Checks & Auto-Redirects
+  // Role & Tenant Tab Authorization Checks & Auto-Redirects
   useEffect(() => {
     const roleRoutes: Record<string, string[]> = {
       super_admin: [
@@ -71,12 +71,18 @@ const AppContent: React.FC = () => {
       store_manager: ['laundry', 'stock']
     };
 
-    const allowed = roleRoutes[userRole] || [];
-    if (!allowed.includes(currentTab)) {
-      // Redirect to the first allowed tab for this role
-      setCurrentTab(allowed[0] || (userRole === 'super_admin' ? 'superadmin' : 'dashboard'));
+    let allowed = roleRoutes[userRole] || [];
+    
+    // If not super_admin, filter by tenant's enabled menus
+    if (userRole !== 'super_admin' && currentTenant?.enabledMenus && Array.isArray(currentTenant.enabledMenus)) {
+      allowed = allowed.filter(tab => currentTenant.enabledMenus!.includes(tab));
     }
-  }, [userRole, currentTab]);
+
+    if (allowed.length > 0 && !allowed.includes(currentTab)) {
+      // Redirect to the first allowed tab for this role and tenant
+      setCurrentTab(allowed[0]);
+    }
+  }, [userRole, currentTab, currentTenant]);
 
   if (loadingAuth) {
     return (

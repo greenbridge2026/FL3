@@ -18,12 +18,11 @@ import {
 } from 'lucide-react';
 
 export const LoginScreen: React.FC = () => {
-  const { loginUser, userAccounts } = useApp();
+  const { loginUser } = useApp();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [loginType, setLoginType] = useState<'client' | 'superadmin'>('client');
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -32,16 +31,6 @@ export const LoginScreen: React.FC = () => {
     const res = loginUser(email, password);
     if (!res.success) {
       setError(res.error || 'Invalid credentials');
-    }
-  };
-
-  const handleQuickLogin = (accEmail: string, accPass: string) => {
-    setEmail(accEmail);
-    setPassword(accPass);
-    setError(null);
-    const res = loginUser(accEmail, accPass);
-    if (!res.success) {
-      setError(res.error || 'Invalid quick login credentials');
     }
   };
 
@@ -112,59 +101,18 @@ export const LoginScreen: React.FC = () => {
 
         </div>
 
-        {/* RIGHT PANEL: LOGIN FORM & DEMO ACCOUNTS */}
+        {/* RIGHT PANEL: LOGIN FORM */}
         <div className="md:col-span-7 p-8 sm:p-10 flex flex-col justify-between space-y-6">
           
           <div>
             
-            {/* Login Type Switcher */}
-            <div className="flex items-center p-1 bg-slate-950 border border-slate-800 rounded-2xl mb-6">
-              <button
-                type="button"
-                onClick={() => {
-                  setLoginType('client');
-                  setEmail('merridien@hotel.com');
-                  setPassword('123456');
-                  setError(null);
-                }}
-                className={`flex-1 py-2.5 rounded-xl font-bold text-xs transition-all flex items-center justify-center gap-2 ${
-                  loginType === 'client' 
-                    ? 'bg-indigo-600 text-white shadow-md' 
-                    : 'text-slate-400 hover:text-slate-200'
-                }`}
-              >
-                <Building2 className="w-4 h-4" />
-                <span>Tenant Client Login</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => {
-                  setLoginType('superadmin');
-                  setEmail('superadmin@hotelvista.com');
-                  setPassword('super123');
-                  setError(null);
-                }}
-                className={`flex-1 py-2.5 rounded-xl font-bold text-xs transition-all flex items-center justify-center gap-2 ${
-                  loginType === 'superadmin' 
-                    ? 'bg-gradient-to-r from-amber-500 to-orange-600 text-white shadow-md' 
-                    : 'text-slate-400 hover:text-slate-200'
-                }`}
-              >
-                <Crown className="w-4 h-4" />
-                <span>Super Admin SaaS</span>
-              </button>
-            </div>
-
             {/* Header Title */}
             <div>
               <h2 className="text-xl font-black text-white">
-                {loginType === 'superadmin' ? 'Super Admin Portal Access' : 'Sign In to Your Property'}
+                Sign In to HotelVista ERP
               </h2>
               <p className="text-xs text-slate-400 mt-1">
-                {loginType === 'superadmin' 
-                  ? 'Access global multi-tenant controls, properties & subscriptions.' 
-                  : 'Enter your account credentials to access your hotel ERP terminal.'}
+                Enter your credentials to access your hotel property or SaaS portal.
               </p>
             </div>
 
@@ -180,15 +128,15 @@ export const LoginScreen: React.FC = () => {
             <form onSubmit={handleSubmit} className="space-y-4 mt-6 text-xs">
               
               <div className="space-y-1.5">
-                <label className="font-bold text-slate-400 block">Email ID / Username *</label>
+                <label className="font-bold text-slate-400 block">Username / Email ID *</label>
                 <div className="relative">
                   <Mail className="w-4 h-4 text-slate-500 absolute left-3.5 top-3.5" />
                   <input
-                    type="email"
+                    type="text"
                     required
                     value={email}
                     onChange={e => setEmail(e.target.value)}
-                    placeholder={loginType === 'superadmin' ? 'superadmin@hotelvista.com' : 'merridien@hotel.com'}
+                    placeholder="e.g. superAdmin or name@hotel.com"
                     className="w-full pl-10 pr-4 py-3 bg-slate-950 border border-slate-800 rounded-2xl font-mono text-xs text-white focus:ring-2 focus:ring-indigo-500 focus:outline-none"
                   />
                 </div>
@@ -218,14 +166,10 @@ export const LoginScreen: React.FC = () => {
 
               <button
                 type="submit"
-                className={`w-full py-3.5 font-bold rounded-2xl text-xs transition-all flex items-center justify-center gap-2 shadow-lg ${
-                  loginType === 'superadmin'
-                    ? 'bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-600 hover:to-orange-700 text-white shadow-amber-500/20'
-                    : 'bg-indigo-600 hover:bg-indigo-500 text-white shadow-indigo-600/20'
-                }`}
+                className="w-full py-3.5 font-bold rounded-2xl text-xs transition-all flex items-center justify-center gap-2 shadow-lg bg-indigo-600 hover:bg-indigo-500 text-white shadow-indigo-600/20"
               >
                 <LogIn className="w-4 h-4" />
-                <span>{loginType === 'superadmin' ? 'Authenticate Super Admin' : 'Sign In to Hotel ERP'}</span>
+                <span>Sign In to Terminal</span>
                 <ArrowRight className="w-4 h-4" />
               </button>
 
@@ -233,37 +177,11 @@ export const LoginScreen: React.FC = () => {
 
           </div>
 
-          {/* QUICK-LOGIN DEMO ACCOUNTS SECTION */}
-          <div className="pt-4 border-t border-slate-800 space-y-2.5">
-            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
-              ⚡ One-Click Instant Demo Login Accounts
-            </span>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-              {userAccounts.map(acc => (
-                <button
-                  key={acc.id}
-                  type="button"
-                  onClick={() => handleQuickLogin(acc.email, acc.password)}
-                  className="p-3 rounded-xl border border-slate-800 hover:border-indigo-500/50 bg-slate-950/80 hover:bg-indigo-950/40 text-left transition-all flex items-start justify-between group"
-                >
-                  <div className="min-w-0 pr-2 space-y-0.5">
-                    <p className="font-bold text-slate-200 text-[11px] truncate group-hover:text-indigo-300">
-                      {acc.name}
-                    </p>
-                    <p className="text-[10px] font-mono text-indigo-400 truncate">
-                      <span className="text-slate-500 font-sans">Email:</span> {acc.email}
-                    </p>
-                    <p className="text-[10px] font-mono text-emerald-400 truncate">
-                      <span className="text-slate-500 font-sans">Pass:</span> {acc.password}
-                    </p>
-                  </div>
-                  <span className="text-[9px] px-2 py-1 bg-slate-800 group-hover:bg-indigo-600 text-slate-300 group-hover:text-white rounded-lg font-bold shrink-0 mt-0.5">
-                    {acc.role === 'super_admin' ? 'SUPER' : acc.role.toUpperCase()}
-                  </span>
-                </button>
-              ))}
-            </div>
+          {/* Secure Access Footer Notice */}
+          <div className="pt-4 border-t border-slate-800/80 text-center">
+            <p className="text-[11px] text-slate-500">
+              Protected by Enterprise Multi-Tenant RBAC Security • HotelVista ERP
+            </p>
           </div>
 
         </div>

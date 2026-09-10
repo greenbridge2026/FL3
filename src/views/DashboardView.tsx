@@ -24,7 +24,13 @@ interface DashboardViewProps {
 }
 
 export const DashboardView: React.FC<DashboardViewProps> = ({ setTab }) => {
-  const { rooms, orders, laundryOrders, hallBookings, preBookings, getBillSummary } = useApp();
+  const { rooms, orders, laundryOrders, hallBookings, preBookings, getBillSummary, currentTenant, userRole } = useApp();
+
+  const isMenuEnabled = (menuId: string) => {
+    if (userRole === 'super_admin') return true;
+    if (!currentTenant?.enabledMenus || !Array.isArray(currentTenant.enabledMenus)) return true;
+    return currentTenant.enabledMenus.includes(menuId);
+  };
 
   // CALCULATE STATS
   // 1. Rooms counters
@@ -179,50 +185,58 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ setTab }) => {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         
         {/* Restaurant Sales */}
-        <div className="p-4 bg-white dark:bg-slate-900 border border-slate-200/40 dark:border-slate-800/40 rounded-xl flex items-center gap-3 shadow-sm">
-          <div className="p-2 rounded-lg bg-indigo-50 dark:bg-indigo-950/30 text-indigo-500">
-            <Utensils className="w-4 h-4" />
+        {isMenuEnabled('restaurant') && (
+          <div className="p-4 bg-white dark:bg-slate-900 border border-slate-200/40 dark:border-slate-800/40 rounded-xl flex items-center gap-3 shadow-sm">
+            <div className="p-2 rounded-lg bg-indigo-50 dark:bg-indigo-950/30 text-indigo-500">
+              <Utensils className="w-4 h-4" />
+            </div>
+            <div>
+              <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Restaurant Sales</p>
+              <p className="text-base font-bold font-mono text-slate-800 dark:text-slate-200">₹{restaurantSales.toLocaleString()}</p>
+            </div>
           </div>
-          <div>
-            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Restaurant Sales</p>
-            <p className="text-base font-bold font-mono text-slate-800 dark:text-slate-200">₹{restaurantSales.toLocaleString()}</p>
-          </div>
-        </div>
+        )}
 
         {/* Bar Sales */}
-        <div className="p-4 bg-white dark:bg-slate-900 border border-slate-200/40 dark:border-slate-800/40 rounded-xl flex items-center gap-3 shadow-sm">
-          <div className="p-2 rounded-lg bg-violet-50 dark:bg-violet-950/30 text-violet-500">
-            <GlassWater className="w-4 h-4" />
+        {isMenuEnabled('bar') && (
+          <div className="p-4 bg-white dark:bg-slate-900 border border-slate-200/40 dark:border-slate-800/40 rounded-xl flex items-center gap-3 shadow-sm">
+            <div className="p-2 rounded-lg bg-violet-50 dark:bg-violet-950/30 text-violet-500">
+              <GlassWater className="w-4 h-4" />
+            </div>
+            <div>
+              <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Bar Sales</p>
+              <p className="text-base font-bold font-mono text-slate-800 dark:text-slate-200">₹{barSales.toLocaleString()}</p>
+            </div>
           </div>
-          <div>
-            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Bar Sales</p>
-            <p className="text-base font-bold font-mono text-slate-800 dark:text-slate-200">₹{barSales.toLocaleString()}</p>
-          </div>
-        </div>
+        )}
 
         {/* Hall Rent Booked */}
-        <div className="p-4 bg-white dark:bg-slate-900 border border-slate-200/40 dark:border-slate-800/40 rounded-xl flex items-center gap-3 shadow-sm">
-          <div className="p-2 rounded-lg bg-amber-50 dark:bg-amber-950/30 text-amber-500">
-            <Calendar className="w-4 h-4" />
+        {isMenuEnabled('hall') && (
+          <div className="p-4 bg-white dark:bg-slate-900 border border-slate-200/40 dark:border-slate-800/40 rounded-xl flex items-center gap-3 shadow-sm">
+            <div className="p-2 rounded-lg bg-amber-50 dark:bg-amber-950/30 text-amber-500">
+              <Calendar className="w-4 h-4" />
+            </div>
+            <div>
+              <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Hall Bookings</p>
+              <p className="text-base font-bold font-mono text-slate-800 dark:text-slate-200">₹{hallSales.toLocaleString()}</p>
+            </div>
           </div>
-          <div>
-            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Hall Bookings</p>
-            <p className="text-base font-bold font-mono text-slate-800 dark:text-slate-200">₹{hallSales.toLocaleString()}</p>
-          </div>
-        </div>
+        )}
 
         {/* Laundry Pending */}
-        <div className="p-4 bg-white dark:bg-slate-900 border border-slate-200/40 dark:border-slate-800/40 rounded-xl flex items-center gap-3 shadow-sm">
-          <div className="p-2 rounded-lg bg-rose-50 dark:bg-rose-950/30 text-rose-500">
-            <Clock className="w-4 h-4" />
+        {isMenuEnabled('laundry') && (
+          <div className="p-4 bg-white dark:bg-slate-900 border border-slate-200/40 dark:border-slate-800/40 rounded-xl flex items-center gap-3 shadow-sm">
+            <div className="p-2 rounded-lg bg-rose-50 dark:bg-rose-950/30 text-rose-500">
+              <Clock className="w-4 h-4" />
+            </div>
+            <div>
+              <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Laundry Pending</p>
+              <p className="text-base font-bold font-mono text-slate-800 dark:text-slate-200">
+                {laundryPending} <span className="text-[10px] text-slate-400 font-normal font-sans">orders</span>
+              </p>
+            </div>
           </div>
-          <div>
-            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Laundry Pending</p>
-            <p className="text-base font-bold font-mono text-slate-800 dark:text-slate-200">
-              {laundryPending} <span className="text-[10px] text-slate-400 font-normal font-sans">orders</span>
-            </p>
-          </div>
-        </div>
+        )}
 
       </div>
 
@@ -233,53 +247,65 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ setTab }) => {
         </h3>
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-3">
           
-          <button 
-            onClick={() => setTab('rooms')} 
-            className="flex flex-col items-center justify-center p-4 bg-indigo-50/40 hover:bg-indigo-50 dark:bg-indigo-950/20 dark:hover:bg-indigo-950/35 border border-indigo-100 dark:border-indigo-900/30 rounded-xl transition-all duration-200"
-          >
-            <PlusCircle className="w-5 h-5 text-indigo-600 dark:text-indigo-400 mb-2" />
-            <span className="text-xs font-semibold text-indigo-900 dark:text-indigo-200">New Booking</span>
-          </button>
+          {isMenuEnabled('rooms') && (
+            <button 
+              onClick={() => setTab('rooms')} 
+              className="flex flex-col items-center justify-center p-4 bg-indigo-50/40 hover:bg-indigo-50 dark:bg-indigo-950/20 dark:hover:bg-indigo-950/35 border border-indigo-100 dark:border-indigo-900/30 rounded-xl transition-all duration-200"
+            >
+              <PlusCircle className="w-5 h-5 text-indigo-600 dark:text-indigo-400 mb-2" />
+              <span className="text-xs font-semibold text-indigo-900 dark:text-indigo-200">New Booking</span>
+            </button>
+          )}
 
-          <button 
-            onClick={() => setTab('restaurant')} 
-            className="flex flex-col items-center justify-center p-4 bg-emerald-50/40 hover:bg-emerald-50 dark:bg-emerald-950/20 dark:hover:bg-emerald-950/35 border border-emerald-100 dark:border-emerald-900/30 rounded-xl transition-all duration-200"
-          >
-            <Utensils className="w-5 h-5 text-emerald-600 dark:text-emerald-400 mb-2" />
-            <span className="text-xs font-semibold text-emerald-900 dark:text-emerald-200">Restaurant POS</span>
-          </button>
+          {isMenuEnabled('restaurant') && (
+            <button 
+              onClick={() => setTab('restaurant')} 
+              className="flex flex-col items-center justify-center p-4 bg-emerald-50/40 hover:bg-emerald-50 dark:bg-emerald-950/20 dark:hover:bg-emerald-950/35 border border-emerald-100 dark:border-emerald-900/30 rounded-xl transition-all duration-200"
+            >
+              <Utensils className="w-5 h-5 text-emerald-600 dark:text-emerald-400 mb-2" />
+              <span className="text-xs font-semibold text-emerald-900 dark:text-emerald-200">Restaurant POS</span>
+            </button>
+          )}
 
-          <button 
-            onClick={() => setTab('bar')} 
-            className="flex flex-col items-center justify-center p-4 bg-violet-50/40 hover:bg-violet-50 dark:bg-violet-950/20 dark:hover:bg-violet-950/35 border border-violet-100 dark:border-violet-900/30 rounded-xl transition-all duration-200"
-          >
-            <Wine className="w-5 h-5 text-violet-600 dark:text-violet-400 mb-2" />
-            <span className="text-xs font-semibold text-violet-900 dark:text-violet-200">Bar POS</span>
-          </button>
+          {isMenuEnabled('bar') && (
+            <button 
+              onClick={() => setTab('bar')} 
+              className="flex flex-col items-center justify-center p-4 bg-violet-50/40 hover:bg-violet-50 dark:bg-violet-950/20 dark:hover:bg-violet-950/35 border border-violet-100 dark:border-violet-900/30 rounded-xl transition-all duration-200"
+            >
+              <Wine className="w-5 h-5 text-violet-600 dark:text-violet-400 mb-2" />
+              <span className="text-xs font-semibold text-violet-900 dark:text-violet-200">Bar POS</span>
+            </button>
+          )}
 
-          <button 
-            onClick={() => setTab('hall')} 
-            className="flex flex-col items-center justify-center p-4 bg-amber-50/40 hover:bg-amber-50 dark:bg-amber-950/20 dark:hover:bg-amber-950/35 border border-amber-100 dark:border-amber-900/30 rounded-xl transition-all duration-200"
-          >
-            <Calendar className="w-5 h-5 text-amber-600 dark:text-amber-400 mb-2" />
-            <span className="text-xs font-semibold text-amber-900 dark:text-amber-200">Hall Booking</span>
-          </button>
+          {isMenuEnabled('hall') && (
+            <button 
+              onClick={() => setTab('hall')} 
+              className="flex flex-col items-center justify-center p-4 bg-amber-50/40 hover:bg-amber-50 dark:bg-amber-950/20 dark:hover:bg-amber-950/35 border border-amber-100 dark:border-amber-900/30 rounded-xl transition-all duration-200"
+            >
+              <Calendar className="w-5 h-5 text-amber-600 dark:text-amber-400 mb-2" />
+              <span className="text-xs font-semibold text-amber-900 dark:text-amber-200">Hall Booking</span>
+            </button>
+          )}
 
-          <button 
-            onClick={() => setTab('billing')} 
-            className="flex flex-col items-center justify-center p-4 bg-rose-50/40 hover:bg-rose-50 dark:bg-rose-950/20 dark:hover:bg-rose-950/35 border border-rose-100 dark:border-rose-900/30 rounded-xl transition-all duration-200"
-          >
-            <Receipt className="w-5 h-5 text-rose-600 dark:text-rose-400 mb-2" />
-            <span className="text-xs font-semibold text-rose-900 dark:text-rose-200">Check Out Bill</span>
-          </button>
+          {isMenuEnabled('billing') && (
+            <button 
+              onClick={() => setTab('billing')} 
+              className="flex flex-col items-center justify-center p-4 bg-rose-50/40 hover:bg-rose-50 dark:bg-rose-950/20 dark:hover:bg-rose-950/35 border border-rose-100 dark:border-rose-900/30 rounded-xl transition-all duration-200"
+            >
+              <Receipt className="w-5 h-5 text-rose-600 dark:text-rose-400 mb-2" />
+              <span className="text-xs font-semibold text-rose-900 dark:text-rose-200">Check Out Bill</span>
+            </button>
+          )}
 
-          <button 
-            onClick={() => setTab('stock')} 
-            className="flex flex-col items-center justify-center p-4 bg-slate-50 hover:bg-slate-100 dark:bg-slate-800/40 dark:hover:bg-slate-800/80 border border-slate-200 dark:border-slate-700/50 rounded-xl transition-all duration-200"
-          >
-            <Package className="w-5 h-5 text-slate-600 dark:text-slate-400 mb-2" />
-            <span className="text-xs font-semibold text-slate-700 dark:text-slate-200">Inventory</span>
-          </button>
+          {isMenuEnabled('stock') && (
+            <button 
+              onClick={() => setTab('stock')} 
+              className="flex flex-col items-center justify-center p-4 bg-slate-50 hover:bg-slate-100 dark:bg-slate-800/40 dark:hover:bg-slate-800/80 border border-slate-200 dark:border-slate-700/50 rounded-xl transition-all duration-200"
+            >
+              <Package className="w-5 h-5 text-slate-600 dark:text-slate-400 mb-2" />
+              <span className="text-xs font-semibold text-slate-700 dark:text-slate-200">Inventory</span>
+            </button>
+          )}
 
         </div>
       </div>
