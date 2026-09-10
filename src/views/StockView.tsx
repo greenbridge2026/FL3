@@ -115,33 +115,42 @@ export const StockView: React.FC = () => {
   };
 
   // Search & Filter Helpers
-  const searchLower = searchTerm.toLowerCase().trim();
+  const searchLower = (searchTerm || '').toLowerCase().trim();
 
-  const filteredInventory = inventory.filter(i => 
-    !searchLower || 
-    i.name.toLowerCase().includes(searchLower) ||
-    i.category.toLowerCase().includes(searchLower) ||
-    (i.barcode && i.barcode.toLowerCase().includes(searchLower))
-  );
+  const filteredInventory = (inventory || []).filter(i => {
+    if (!i) return false;
+    return (
+      !searchLower || 
+      (i.name || '').toLowerCase().includes(searchLower) ||
+      (i.category || '').toLowerCase().includes(searchLower) ||
+      (i.barcode && (i.barcode || '').toLowerCase().includes(searchLower))
+    );
+  });
 
-  const filteredPurchases = purchaseLogs.filter(p => 
-    isDateInRange(p.date) &&
-    (!searchLower || 
-      p.itemName.toLowerCase().includes(searchLower) ||
-      p.category.toLowerCase().includes(searchLower) ||
-      p.supplier.toLowerCase().includes(searchLower)
-    )
-  );
+  const filteredPurchases = (purchaseLogs || []).filter(p => {
+    if (!p) return false;
+    return (
+      isDateInRange(p.date) &&
+      (!searchLower || 
+        (p.itemName || '').toLowerCase().includes(searchLower) ||
+        (p.category || '').toLowerCase().includes(searchLower) ||
+        (p.supplier || '').toLowerCase().includes(searchLower)
+      )
+    );
+  });
 
-  const filteredAdjustments = (stockAdjustmentLogs || []).filter(a => 
-    isDateInRange(a.date) &&
-    (!searchLower || 
-      a.itemName.toLowerCase().includes(searchLower) ||
-      a.category.toLowerCase().includes(searchLower) ||
-      a.description.toLowerCase().includes(searchLower) ||
-      a.direction.toLowerCase().includes(searchLower)
-    )
-  );
+  const filteredAdjustments = (stockAdjustmentLogs || []).filter(a => {
+    if (!a) return false;
+    return (
+      isDateInRange(a.date) &&
+      (!searchLower || 
+        (a.itemName || '').toLowerCase().includes(searchLower) ||
+        (a.category || '').toLowerCase().includes(searchLower) ||
+        (a.description || '').toLowerCase().includes(searchLower) ||
+        (a.direction || '').toLowerCase().includes(searchLower)
+      )
+    );
+  });
 
   const totalPurchaseSpend = filteredPurchases.reduce((acc, p) => acc + p.totalAmount, 0);
   const totalPurchaseGst = filteredPurchases.reduce((acc, p) => acc + (p.gstAmount || 0), 0);
@@ -249,7 +258,7 @@ export const StockView: React.FC = () => {
     if (!supplier || !purchaseItemName || qty <= 0 || pricePerUnit <= 0) return;
 
     // Check if item exists in inventory tracker first. If not, automatically add it.
-    const exists = inventory.find(i => i.name.toLowerCase() === purchaseItemName.toLowerCase());
+    const exists = inventory.find(i => (i.name || '').toLowerCase() === (purchaseItemName || '').toLowerCase());
     if (!exists) {
       addInventoryItem({
         name: purchaseItemName,
@@ -566,11 +575,12 @@ export const StockView: React.FC = () => {
                     list="inventory-suggestions"
                     value={purchaseItemName}
                     onChange={e => {
-                      setPurchaseItemName(e.target.value);
-                      const matched = inventory.find(i => i.name.toLowerCase() === e.target.value.toLowerCase());
+                      const val = e.target.value;
+                      setPurchaseItemName(val);
+                      const matched = inventory.find(i => (i.name || '').toLowerCase() === (val || '').toLowerCase());
                       if (matched) {
-                        setPurchaseCategory(matched.category);
-                        setUnit(matched.unit);
+                        setPurchaseCategory(matched.category || 'Kitchen');
+                        setUnit(matched.unit || 'pcs');
                       }
                     }}
                     className="w-full p-2 border dark:border-slate-800 dark:bg-slate-950 rounded-lg"

@@ -84,15 +84,17 @@ export const RoomsView: React.FC<RoomsViewProps> = ({ setTab, setSelectedRoomFor
   const statuses = ['All', 'Available', 'Occupied', 'Reserved', 'Cleaning', 'Maintenance'];
 
   // Filter logic
-  const filteredRooms = rooms.filter(room => {
+  const filteredRooms = (rooms || []).filter(room => {
+    if (!room) return false;
     const matchesCat = categoryFilter === 'All' || room.category === categoryFilter;
     const matchesStat = statusFilter === 'All' || room.status === statusFilter;
     
-    const searchLower = roomSearchTerm.toLowerCase();
+    const searchLower = (roomSearchTerm || '').toLowerCase().trim();
     const matchesSearch = 
-      room.roomNumber.includes(searchLower) ||
-      (room.guestName && room.guestName.toLowerCase().includes(searchLower)) ||
-      (room.guestPhone && room.guestPhone.includes(searchLower));
+      !searchLower ||
+      (room.roomNumber || '').includes(searchLower) ||
+      (room.guestName && (room.guestName || '').toLowerCase().includes(searchLower)) ||
+      (room.guestPhone && (room.guestPhone || '').includes(searchLower));
       
     return matchesCat && matchesStat && matchesSearch;
   });
