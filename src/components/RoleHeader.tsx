@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useApp, UserRole } from '../context/AppContext';
-import { Bell, Sun, Moon, Shield, Award, Landmark, Eye, Check, Menu, LogIn, LogOut, UserCheck } from 'lucide-react';
+import { Bell, Sun, Moon, Shield, Award, Landmark, Eye, Check, Menu, LogIn, LogOut, UserCheck, Database } from 'lucide-react';
 import { LoginModal } from './LoginModal';
 
 interface RoleHeaderProps {
@@ -19,7 +19,9 @@ export const RoleHeader: React.FC<RoleHeaderProps> = ({ onToggleSidebar }) => {
     logoutUser,
     user,
     logout,
-    settings 
+    settings,
+    cloudDbConnected,
+    cloudDbName
   } = useApp();
   const [showRoles, setShowRoles] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
@@ -76,6 +78,27 @@ export const RoleHeader: React.FC<RoleHeaderProps> = ({ onToggleSidebar }) => {
         {/* Action buttons (Right) */}
         <div className="flex items-center gap-3">
           
+          {/* LIVE CLOUD DB INDICATOR */}
+          <div 
+            className={`hidden lg:flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium transition-all ${
+              cloudDbConnected 
+                ? 'bg-emerald-500/10 border border-emerald-500/30 text-emerald-600 dark:text-emerald-400' 
+                : 'bg-amber-500/10 border border-amber-500/30 text-amber-600 dark:text-amber-400'
+            }`}
+            title={`Firebase Firestore Live Sync: ${cloudDbConnected ? 'Connected to project ' + cloudDbName : 'Local fallback'}`}
+          >
+            <span className="relative flex h-2 w-2">
+              {cloudDbConnected && (
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+              )}
+              <span className={`relative inline-flex rounded-full h-2 w-2 ${cloudDbConnected ? 'bg-emerald-500' : 'bg-amber-500'}`}></span>
+            </span>
+            <Database className="w-3 h-3" />
+            <span className="font-mono text-[10px] font-bold">
+              {cloudDbConnected ? `Live Cloud (${cloudDbName})` : 'Local Mode'}
+            </span>
+          </div>
+
           {/* CLIENT LOGIN / SIGN IN BUTTON */}
           <button
             onClick={() => setShowLoginModal(true)}
